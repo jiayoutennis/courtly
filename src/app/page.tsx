@@ -164,8 +164,8 @@ export default function Home() {
         : "bg-gradient-to-b from-white to-gray-50"}`}>
         <h1 className={`text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold mb-4 mt-6 ${darkMode 
           ? "text-white" 
-          : "text-slate-800"} transition-colors px-0 mx-auto max-w-full overflow-hidden`}>
-          <span className="block text-left sm:text-center break-words hyphens-auto">
+          : "text-slate-800"} transition-colors px-0 mx-auto max-w-full`}>
+          <span className="block text-left sm:text-center break-normal">
             {typedText}<span className="inline-block animate-pulse">|</span>
           </span>
         </h1>
