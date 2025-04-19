@@ -33,7 +33,7 @@ export default function SignUpPage() {
     }
   };
   
-  return (
+    return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode 
       ? "bg-gray-900 text-gray-50" 
       : "bg-white text-slate-800"}`}>
@@ -80,7 +80,7 @@ export default function SignUpPage() {
             <p className={`${darkMode 
               ? "text-gray-400" 
               : "text-gray-600"} mb-8 text-center transition-colors`}>
-              Choose how you'd like to get started
+              Choose how you&apos;d like to get started
             </p>
             
             {/* Option Cards */}
@@ -227,23 +227,23 @@ export default function SignUpPage() {
                 )}
                 
                 {/* Common fields for both options */}
-                <input 
-                  type="text" 
-                  placeholder="Full Name" 
+            <input
+              type="text"
+              placeholder="Full Name"
                   className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                     ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                     : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
-                />
-                <input 
-                  type="email" 
+            />
+            <input
+              type="email"
                   placeholder="Email Address" 
                   className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                     ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                     : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
-                />
-                <input 
-                  type="password" 
-                  placeholder="Password" 
+            />
+            <input
+              type="password"
+              placeholder="Password"
                   className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                     ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                     : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
@@ -265,13 +265,13 @@ export default function SignUpPage() {
               </button>
               
               {/* Back button */}
-              <button 
+            <button
                 onClick={() => setShowForm(false)}
                 className={`w-full font-medium py-3 px-4 rounded-lg transition-colors ${darkMode 
                   ? "bg-gray-800 text-white hover:bg-gray-700 border border-gray-700" 
                   : "bg-white text-slate-800 hover:bg-gray-50 border border-gray-200"}`}>
                 Back to options
-              </button>
+            </button>
             </div>
           </>
         )}
@@ -289,7 +289,7 @@ export default function SignUpPage() {
             ? "text-teal-400 hover:text-violet-400" 
             : "text-amber-400 hover:text-green-400"} transition-colors`}>Privacy Policy</Link>.
         </div>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }

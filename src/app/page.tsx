@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
+import Image from "next/image";
 
 export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
@@ -180,11 +181,13 @@ export default function Home() {
           ? "border border-gray-700 bg-gray-800" 
           : "border border-gray-200 bg-white"} transition-colors`}>
           <div className="relative">
-            <img 
+            <Image
               src="/PreviewImage.png" 
               alt="Tennis Court Schedule" 
+              width={1200}
+              height={800}
               className="w-full h-auto max-h-[80vh] object-contain mx-auto"
-              loading="lazy"
+              priority
             />
           </div>
         </div>
@@ -201,11 +204,12 @@ export default function Home() {
               <div className={`relative p-4 rounded-lg shadow-xl transition-colors ${darkMode 
                 ? "bg-[#1a2235]" 
                 : "bg-white"}`}>
-                <img
+                <Image
                   src="/analytics-dashboard.png"
                   alt="Tennis Analytics Dashboard"
+                  width={800}
+                  height={600}
                   className="w-full h-auto rounded-lg"
-                  loading="lazy"
                 />
                 {/* Green Circle Backgrounds */}
                 <div className="absolute -z-10 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] rounded-full bg-green-400 opacity-10"></div>
@@ -339,9 +343,11 @@ export default function Home() {
               </div>
             </div>
             <div className="md:w-1/2 relative">
-              <img 
+              <Image
                 src="/tennis-player-phone.png" 
                 alt="Tennis player using mobile app" 
+                width={600}
+                height={800}
                 className={`rounded-lg w-full h-auto object-cover shadow-xl ${darkMode 
                   ? "border border-gray-700" 
                   : "border border-white border-opacity-30"} transition-colors`}
