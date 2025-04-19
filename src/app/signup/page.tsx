@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import DarkModeToggle from "@/app/components/DarkModeToggle";
 import BackButton from "@/app/components/BackButton";
 import PageTitle from "@/app/components/PageTitle";
 
-export default function SignUpPage() {
+// Client component that uses searchParams
+function SignUpContent() {
   const searchParams = useSearchParams();
   const optionParam = searchParams.get('option');
   
@@ -291,5 +292,14 @@ export default function SignUpPage() {
         </div>
         </div>
       </div>
+    );
+}
+
+// Main page component with Suspense
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <SignUpContent />
+    </Suspense>
     );
   }
