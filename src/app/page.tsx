@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 
@@ -41,7 +40,7 @@ export default function Home() {
     }
   }, []);
 
-  // Setup Intersection Observer for fade-in and fade-out animation
+  // Setup Intersection Observer for fade-in animation
   useEffect(() => {
     const observerOptions = {
       root: null,
@@ -60,13 +59,17 @@ export default function Home() {
 
     const observer = new IntersectionObserver(observerCallback, observerOptions);
     
+    // Fix the exhaustive deps warning by copying the refs to a local variable
+    const currentFeatureRefs = featureRefs.current;
+    
     // Observe all feature items
-    featureRefs.current.forEach((ref) => {
+    currentFeatureRefs.forEach((ref) => {
       if (ref) observer.observe(ref);
     });
 
     return () => {
-      featureRefs.current.forEach((ref) => {
+      // Use the local variable in the cleanup function
+      currentFeatureRefs.forEach((ref) => {
         if (ref) observer.unobserve(ref);
       });
     };
@@ -89,12 +92,18 @@ export default function Home() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
             </svg>
           </div>
-          <span className={`text-sm sm:text-base md:text-lg font-bold truncate max-w-[90px] sm:max-w-full ${darkMode 
-            ? "text-white" 
-            : "text-slate-800"} transition-colors`}>
-            <span className="hidden sm:inline">Courtly by </span>
-            <span>JiaYou Tennis</span>
-          </span>
+          <div className="flex flex-col xs:flex-row sm:flex-row items-start xs:items-center sm:items-center">
+            <span className={`text-sm sm:text-base md:text-lg font-bold leading-tight mr-1 ${darkMode 
+              ? "text-white" 
+              : "text-slate-800"} transition-colors`}>
+              Courtly
+            </span>
+            <span className={`text-[10px] xs:text-xs sm:text-sm md:text-base ${darkMode 
+              ? "text-gray-300" 
+              : "text-gray-600"} transition-colors`}>
+              by JiaYou Tennis
+            </span>
+          </div>
         </div>
         
         <nav className="hidden md:flex space-x-6">
@@ -137,10 +146,10 @@ export default function Home() {
             : "border-green-400 text-slate-800 hover:bg-green-400 hover:text-white"}`}>
             SIGN UP
           </Link>
-          <Link href="/findyourorg" className={`text-white rounded-lg px-1.5 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 text-[10px] sm:text-xs md:text-sm font-medium transition-all duration-300 flex items-center flex-shrink-0 ${darkMode 
+          <Link href="/findyourorg" className={`text-white rounded-lg px-1.5 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 text-[9px] sm:text-xs md:text-sm font-medium transition-all duration-300 flex items-center flex-shrink-0 ${darkMode 
             ? "bg-teal-600 hover:bg-violet-600" 
             : "bg-green-400 hover:bg-amber-400"}`}>
-            <span className="hidden xs:inline sm:inline">FIND</span> ORG
+            <span className="whitespace-nowrap">FIND YOUR ORG</span>
             <svg viewBox="0 0 24 24" width="8" height="8" className="ml-0.5 w-2 h-2 sm:w-2.5 sm:h-2.5 md:w-3 md:h-3" stroke="currentColor" fill="none">
               <path d="M15.3 13.71l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 0 1 1.4-1.42L11 14v-4a1 1 0 0 1 2 0v4l1.7-1.71a1 1 0 0 1 1.6 1.42z"></path>
             </svg>
@@ -300,27 +309,27 @@ export default function Home() {
         : "bg-gradient-to-r from-green-400 to-green-300"}`}>
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-center gap-8">
-            <div className="md:w-1/2 space-y-6">
-              <h2 className="text-3xl md:text-5xl font-bold text-white">Get started with Courtly</h2>
-              <p className="text-white text-lg md:text-xl">
+            <div className="md:w-1/2 space-y-6 flex flex-col items-center md:items-start">
+              <h2 className="text-3xl md:text-5xl font-bold text-white text-center md:text-left">Get started with Courtly</h2>
+              <p className="text-white text-lg md:text-xl text-center md:text-left">
                 Modernize your tennis organization with the ultimate
                 club management platform.
               </p>
-              <div className="flex flex-wrap gap-4">
-                <a href="#" className={`bg-white px-6 py-3 rounded-lg font-medium flex items-center transition-colors ${darkMode 
+              <div className="flex flex-wrap justify-center md:justify-start gap-4 w-full">
+                <a href="#" className={`bg-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg font-medium flex items-center transition-colors ${darkMode 
                   ? "text-gray-800 hover:text-violet-700" 
                   : "text-slate-800 hover:text-amber-500"}`}>
                   Pricing
-                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ml-2 ${darkMode 
+                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 sm:h-5 w-4 sm:w-5 ml-2 ${darkMode 
                     ? "text-teal-600" 
                     : "text-amber-400"} transition-colors`} viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
                   </svg>
                 </a>
-                <a href="#" className={`bg-white px-6 py-3 rounded-lg font-medium flex items-center transition-colors ${darkMode 
+                <a href="#" className={`bg-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg font-medium flex items-center transition-colors ${darkMode 
                   ? "text-gray-800 hover:text-violet-700" 
                   : "text-slate-800 hover:text-amber-500"}`}>
-                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 mr-2 ${darkMode 
+                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 sm:h-5 w-4 sm:w-5 mr-2 ${darkMode 
                     ? "text-teal-600" 
                     : "text-amber-400"} transition-colors`} viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
