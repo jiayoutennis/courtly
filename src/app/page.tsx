@@ -3,25 +3,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
-import DarkModeToggle from "@/app/components/DarkModeToggle";
-import PageTitle from "@/app/components/PageTitle";
 
 export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
   const featureRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const heroImageRef = useRef<HTMLDivElement | null>(null);
   
-  // Instead of the dynamic text approach, let's use static text with responsive styling
-
-  // Keep just one variable for typewriter
+  // Typewriter effect implementation
   const textToType = "The Ultimate Tennis Organization Platform.";
-
-  // Keep the typewriter effect but simplify it
   const [typedText, setTypedText] = useState('');
-
-  // Run typewriter effect only once on component mount
+  
   useEffect(() => {
-    // Ensure the text is empty at start
     setTypedText('');
     
     let i = 0;
@@ -35,7 +26,12 @@ export default function Home() {
     }, 75); // typing speed
 
     return () => clearInterval(typingInterval);
-  }, []); // Empty dependency array ensures it only runs once on mount
+  }, []);
+
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode);
+    localStorage.setItem("darkMode", !darkMode ? "true" : "false");
+  };
 
   // Initialize dark mode from localStorage on component mount
   useEffect(() => {
@@ -45,7 +41,7 @@ export default function Home() {
     }
   }, []);
 
-  // Keep the Intersection Observer setup but simplify it
+  // Setup Intersection Observer for fade-in and fade-out animation
   useEffect(() => {
     const observerOptions = {
       root: null,
@@ -68,19 +64,11 @@ export default function Home() {
     featureRefs.current.forEach((ref) => {
       if (ref) observer.observe(ref);
     });
-    
-    // Also observe the hero image
-    if (heroImageRef.current) {
-      observer.observe(heroImageRef.current);
-    }
 
     return () => {
       featureRefs.current.forEach((ref) => {
         if (ref) observer.unobserve(ref);
       });
-      if (heroImageRef.current) {
-        observer.unobserve(heroImageRef.current);
-      }
     };
   }, []);
 
@@ -89,10 +77,8 @@ export default function Home() {
       ? "bg-gray-900 text-white" 
       : "bg-white text-slate-800"}`}>
       
-      <PageTitle title="Courtly - Tennis Organization Platform" />
-      
       {/* Navigation */}
-      <header className={`flex flex-wrap justify-between items-center px-3 sm:px-6 md:px-12 py-3 sm:py-4 md:py-6 border-b ${darkMode 
+      <header className={`flex flex-wrap justify-between items-center px-2 sm:px-6 md:px-12 py-3 sm:py-4 md:py-6 border-b ${darkMode 
         ? "border-gray-700" 
         : "border-gray-200"} transition-colors`}>
         <div className="flex items-center">
@@ -103,7 +89,7 @@ export default function Home() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
             </svg>
           </div>
-          <span className={`text-sm sm:text-base md:text-lg font-bold truncate max-w-[100px] sm:max-w-full ${darkMode 
+          <span className={`text-sm sm:text-base md:text-lg font-bold truncate max-w-[90px] sm:max-w-full ${darkMode 
             ? "text-white" 
             : "text-slate-800"} transition-colors`}>
             <span className="hidden sm:inline">Courtly by </span>
@@ -126,9 +112,25 @@ export default function Home() {
             : "text-gray-600 hover:text-amber-400"} transition-colors`}>JIAYOU TENNIS</a>
         </nav>
         
-        <div className="flex items-center space-x-1.5 sm:space-x-3">
-          {/* Dark Mode Toggle Component */}
-          <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
+        <div className="flex items-center space-x-1 sm:space-x-2 md:space-x-3">
+          {/* Dark Mode Toggle Button */}
+          <button 
+            onClick={toggleDarkMode}
+            className={`p-1.5 sm:p-2 rounded-full ${darkMode 
+              ? "bg-gray-800 text-teal-400 hover:bg-gray-700" 
+              : "bg-gray-100 text-amber-500 hover:bg-gray-200"} transition-colors`}
+            aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {darkMode ? (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+              </svg>
+            )}
+          </button>
           
           <Link href="/signup" className={`border rounded-lg px-1.5 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 text-[10px] sm:text-xs md:text-sm font-medium transition-all duration-300 flex-shrink-0 ${darkMode 
             ? "border-teal-600 text-white hover:bg-teal-600" 
@@ -138,8 +140,7 @@ export default function Home() {
           <Link href="/findyourorg" className={`text-white rounded-lg px-1.5 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 text-[10px] sm:text-xs md:text-sm font-medium transition-all duration-300 flex items-center flex-shrink-0 ${darkMode 
             ? "bg-teal-600 hover:bg-violet-600" 
             : "bg-green-400 hover:bg-amber-400"}`}>
-            <span className="hidden xs:inline sm:inline mr-0.5 sm:mr-1">FIND</span> 
-            <span>YOUR ORG</span>
+            <span className="hidden xs:inline sm:inline">FIND</span> ORG
             <svg viewBox="0 0 24 24" width="8" height="8" className="ml-0.5 w-2 h-2 sm:w-2.5 sm:h-2.5 md:w-3 md:h-3" stroke="currentColor" fill="none">
               <path d="M15.3 13.71l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 0 1 1.4-1.42L11 14v-4a1 1 0 0 1 2 0v4l1.7-1.71a1 1 0 0 1 1.6 1.42z"></path>
             </svg>
@@ -151,10 +152,10 @@ export default function Home() {
       <main className={`py-10 md:py-16 px-4 text-center transition-colors ${darkMode 
         ? "bg-gray-900" 
         : "bg-gradient-to-b from-white to-gray-50"}`}>
-        <h1 className={`text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold mb-6 sm:mb-8 md:mb-10 mt-6 ${darkMode 
+        <h1 className={`text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold mb-4 mt-6 ${darkMode 
           ? "text-white" 
-          : "text-slate-800"} transition-colors px-0 mx-auto max-w-full overflow-visible`}>
-          <span className="block text-left sm:text-center break-words hyphens-auto pb-1">
+          : "text-slate-800"} transition-colors px-0 mx-auto max-w-full overflow-hidden`}>
+          <span className="block text-left sm:text-center break-words hyphens-auto">
             {typedText}<span className="inline-block animate-pulse">|</span>
           </span>
         </h1>
@@ -166,12 +167,9 @@ export default function Home() {
         </p>
 
         {/* Image Container */}
-        <div 
-          ref={heroImageRef}
-          className={`mt-12 max-w-3xl mx-auto rounded-lg overflow-hidden shadow-lg opacity-0 ${darkMode 
-            ? "border border-gray-700 bg-gray-800" 
-            : "border border-gray-200 bg-white"} transition-colors`}
-        >
+        <div className={`mt-12 max-w-3xl mx-auto rounded-lg overflow-hidden shadow-lg ${darkMode 
+          ? "border border-gray-700 bg-gray-800" 
+          : "border border-gray-200 bg-white"} transition-colors`}>
           <div className="relative">
             <img 
               src="/PreviewImage.png" 
@@ -208,26 +206,6 @@ export default function Home() {
             
             {/* Features List */}
             <div className="md:w-1/2 space-y-8">
-            {/* AI Assisted */}
-            <div 
-                ref={(el: HTMLDivElement | null) => {
-                  if (el) featureRefs.current[4] = el;
-                }}
-                className="space-y-2 opacity-0 transition-opacity duration-1000 ease-in-out"
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`p-3 rounded-full ${darkMode 
-                    ? "bg-[#1a2235]" 
-                    : "bg-gray-100"} transition-colors`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                    </svg>
-                  </div>
-                  <h3 className={`text-xl md:text-2xl font-bold ${darkMode 
-                    ? "text-white" 
-                    : "text-gray-800"}`}>AI Assisted</h3>
-                </div>
-              </div>
               {/* Manage Members & Access */}
               <div 
                 ref={(el: HTMLDivElement | null) => {
@@ -322,13 +300,13 @@ export default function Home() {
         : "bg-gradient-to-r from-green-400 to-green-300"}`}>
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-center gap-8">
-            <div className="md:w-1/2 space-y-6 flex flex-col items-center md:items-start">
-              <h2 className="text-3xl md:text-5xl font-bold text-white text-center md:text-left">Get started with Courtly</h2>
-              <p className="text-white text-lg md:text-xl text-center md:text-left">
+            <div className="md:w-1/2 space-y-6">
+              <h2 className="text-3xl md:text-5xl font-bold text-white">Get started with Courtly</h2>
+              <p className="text-white text-lg md:text-xl">
                 Modernize your tennis organization with the ultimate
                 club management platform.
               </p>
-              <div className="flex flex-wrap justify-center md:justify-start gap-4 w-full">
+              <div className="flex flex-wrap gap-4">
                 <a href="#" className={`bg-white px-6 py-3 rounded-lg font-medium flex items-center transition-colors ${darkMode 
                   ? "text-gray-800 hover:text-violet-700" 
                   : "text-slate-800 hover:text-amber-500"}`}>
@@ -339,7 +317,7 @@ export default function Home() {
                     <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
                   </svg>
                 </a>
-                <Link href="/signup" className={`bg-white px-6 py-3 rounded-lg font-medium flex items-center transition-colors ${darkMode 
+                <a href="#" className={`bg-white px-6 py-3 rounded-lg font-medium flex items-center transition-colors ${darkMode 
                   ? "text-gray-800 hover:text-violet-700" 
                   : "text-slate-800 hover:text-amber-500"}`}>
                   <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 mr-2 ${darkMode 
@@ -348,7 +326,7 @@ export default function Home() {
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
                   </svg>
                   Sign Up 
-                </Link>
+                </a>
               </div>
             </div>
             <div className="md:w-1/2 relative">
