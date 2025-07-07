@@ -7,10 +7,54 @@ import { useState, useEffect } from "react";
 import DarkModeToggle from "@/app/components/DarkModeToggle";
 import BackButton from "@/app/components/BackButton";
 import PageTitle from "@/app/components/PageTitle";
+import { db } from "../../../firebase";
+import { collection, getDocs } from "firebase/firestore";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../../../firebase";
+import { useRouter } from "next/navigation";
+
+interface Club {
+  id: string;
+  name: string;
+}
 
 export default function FindYourOrgPage() {
   const [selectedOrg, setSelectedOrg] = useState("");
   const [darkMode, setDarkMode] = useState(false);
+  const [clubs, setClubs] = useState<Club[]>([]);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const router = useRouter();
+
+  // Fetch clubs from Firestore
+  useEffect(() => {
+    const fetchClubs = async () => {
+      try {
+        const clubsCollection = collection(db, "users");
+        const querySnapshot = await getDocs(clubsCollection);
+        
+        const clubsData: Club[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          // Only include documents that have club data and are admin type users
+          if (data.userType === 'admin' && data.club && data.club.name) {
+            clubsData.push({
+              id: doc.id,
+              name: data.club.name
+            });
+          }
+        });
+        
+        setClubs(clubsData);
+      } catch (error) {
+        console.error("Error fetching clubs:", error);
+      }
+    };
+
+    fetchClubs();
+  }, []);
 
   const handleOrgChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedOrg(e.target.value);
@@ -23,6 +67,36 @@ export default function FindYourOrgPage() {
       setDarkMode(true);
     }
   }, []);
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      // Successful login
+      router.push('/');
+    } catch (err: any) {
+      console.error("Sign in error:", err);
+      
+      // Provide user-friendly error messages
+      if (err.code === 'auth/invalid-credential' || 
+          err.code === 'auth/user-not-found' || 
+          err.code === 'auth/wrong-password' ||
+          err.code === 'auth/invalid-email') {
+        setError("Wrong email or password");
+      } else if (err.code === 'auth/user-disabled') {
+        setError("This account has been disabled");
+      } else if (err.code === 'auth/network-request-failed') {
+        setError("Network error. Please check your connection");
+      } else {
+        setError("Failed to sign in. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode 
@@ -63,8 +137,15 @@ export default function FindYourOrgPage() {
           Get ready to play some tennis!
         </p>
         
+        {/* Display error message if any */}
+        {error && (
+          <div className="w-full max-w-md mb-4 p-3 bg-red-100 text-red-700 rounded-lg">
+            {error}
+          </div>
+        )}
+        
         {/* Login form */}
-        <div className="w-full max-w-md space-y-4">
+        <form onSubmit={handleSignIn} className="w-full max-w-md space-y-4">
           <div className="space-y-4">
             {/* Tennis Organization Dropdown */}
             <div className="relative">
@@ -76,11 +157,15 @@ export default function FindYourOrgPage() {
                 onChange={handleOrgChange}
               >
                 <option value="" disabled>Select your tennis organization</option>
-                <option value="jiayou">JiaYou Tennis</option>
-                <option value="nyc">NYC Tennis Club</option>
-                <option value="bay">Bay Area Tennis</option>
-                <option value="la">LA Tennis Academy</option>
-                <option value="other">Other</option>
+                {clubs.length > 0 ? (
+                  clubs.map((club) => (
+                    <option key={club.id} value={club.id}>
+                      {club.name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled>Loading clubs...</option>
+                )}
               </select>
               <div className={`pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 ${darkMode 
                 ? "text-teal-400" 
@@ -97,16 +182,22 @@ export default function FindYourOrgPage() {
                 <input 
                   type="email" 
                   placeholder="Your email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                     ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                     : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
+                  required
                 />
                 <input 
                   type="password" 
                   placeholder="Password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                     ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                     : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
+                  required
                 />
               </>
             )}
@@ -114,10 +205,16 @@ export default function FindYourOrgPage() {
           
           {/* Show Sign In button only if org is selected */}
           {selectedOrg && (
-            <button className={`w-full font-medium py-3 px-4 rounded-lg transition-colors ${darkMode 
-              ? "bg-teal-600 text-white hover:bg-violet-600" 
-              : "bg-green-400 text-white hover:bg-amber-400"}`}>
-              Sign in
+            <button 
+              type="submit"
+              disabled={loading}
+              className={`w-full font-medium py-3 px-4 rounded-lg transition-colors ${
+                loading ? "opacity-70 cursor-not-allowed" : ""
+              } ${darkMode 
+                ? "bg-teal-600 text-white hover:bg-violet-600" 
+                : "bg-green-400 text-white hover:bg-amber-400"}`}
+            >
+              {loading ? "Signing in..." : "Sign in"}
             </button>
           )}
           
@@ -158,7 +255,7 @@ export default function FindYourOrgPage() {
               Register your club
             </Link>
           </div>
-        </div>
+        </form>
         
         {/* Terms */}
         <div className={`mt-12 text-xs text-center max-w-md ${darkMode 
@@ -177,5 +274,4 @@ export default function FindYourOrgPage() {
     </div>
   );
 }
-  
-  
+

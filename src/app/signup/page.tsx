@@ -1,20 +1,47 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense, FormEvent } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import DarkModeToggle from "@/app/components/DarkModeToggle";
 import BackButton from "@/app/components/BackButton";
 import PageTitle from "@/app/components/PageTitle";
+import { auth, db } from "../../../firebase"; // Adjust the import path based on your project structure
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc, collection, getDocs } from "firebase/firestore";
+
+interface Club {
+  id: string;
+  name: string;
+}
 
 // Client component that uses searchParams
 function SignUpContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const optionParam = searchParams.get('option');
+  const optionParam = searchParams ? searchParams.get('option') : null;
   
   const [darkMode, setDarkMode] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(optionParam || null);
   const [showForm, setShowForm] = useState(!!optionParam); // Show form immediately if option is provided
+  
+  // Form states
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [clubName, setClubName] = useState("");
+  const [clubAddress, setClubAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [clubs, setClubs] = useState<Club[]>([]);
+  const [loadingClubs, setLoadingClubs] = useState(false);
+  
+  // UI states
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   
   // Initialize dark mode from localStorage on component mount
   useEffect(() => {
@@ -23,6 +50,39 @@ function SignUpContent() {
       setDarkMode(true);
     }
   }, []);
+
+  // Fetch clubs from Firestore
+  useEffect(() => {
+    if (selectedOption === 'connect' && showForm) {
+      const fetchClubs = async () => {
+        setLoadingClubs(true);
+        try {
+          const clubsCollection = collection(db, "users");
+          const querySnapshot = await getDocs(clubsCollection);
+          
+          const clubsData: Club[] = [];
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            // Only include documents that have club data and are admin type users
+            if (data.userType === 'admin' && data.club && data.club.name) {
+              clubsData.push({
+                id: doc.id,
+                name: data.club.name
+              });
+            }
+          });
+          
+          setClubs(clubsData);
+        } catch (error) {
+          console.error("Error fetching clubs:", error);
+        } finally {
+          setLoadingClubs(false);
+        }
+      };
+
+      fetchClubs();
+    }
+  }, [selectedOption, showForm]);
   
   const handleOptionSelect = (option: string) => {
     setSelectedOption(option);
@@ -33,8 +93,99 @@ function SignUpContent() {
       setShowForm(true);
     }
   };
+
+  const validateForm = () => {
+    setError("");
+    
+    if (!email || !password || !confirmPassword || !fullName) {
+      setError("Please fill in all required fields");
+      return false;
+    }
+    
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return false;
+    }
+    
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return false;
+    }
+    
+    if (selectedOption === 'register' && (!clubName || !clubAddress || !city || !state)) {
+      setError("Please fill in all club information");
+      return false;
+    }
+    
+    if (selectedOption === 'connect' && !organization) {
+      setError("Please select your tennis organization");
+      return false;
+    }
+    
+    return true;
+  };
   
-    return (
+  const handleSignUp = async (e: FormEvent) => {
+    e.preventDefault();
+    
+    if (!validateForm()) return;
+    
+    setLoading(true);
+    
+    try {
+      // Create user in Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Store additional user info in Firestore
+      await setDoc(doc(db, "users", user.uid), {
+        fullName,
+        email,
+        userType: selectedOption === 'connect' ? 'member' : 'admin',
+        createdAt: new Date().toISOString(),
+        ...(selectedOption === 'register' 
+          ? { 
+              club: {
+                name: clubName,
+                address: clubAddress,
+                city,
+                state
+              }
+            } 
+          : { organization }
+        )
+      });
+      
+      setSuccess("Account created successfully!");
+      
+      // Redirect to dashboard or confirmation page after brief delay
+      setTimeout(() => {
+        router.push('/dashboard');
+      }, 1500);
+    } catch (error: any) {
+      console.error("Error signing up:", error);
+      
+      // Provide user-friendly error messages
+      if (error.code === 'auth/invalid-credential' || 
+          error.code === 'auth/user-not-found' || 
+          error.code === 'auth/wrong-password' ||
+          error.code === 'auth/invalid-email') {
+        setError("Wrong email or password");
+      } else if (error.code === 'auth/email-already-in-use') {
+        setError("This email is already registered");
+      } else if (error.code === 'auth/weak-password') {
+        setError("Password is too weak, please choose a stronger password");
+      } else if (error.code === 'auth/network-request-failed') {
+        setError("Network error. Please check your connection");
+      } else {
+        setError("Failed to create account. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode 
       ? "bg-gray-900 text-gray-50" 
       : "bg-white text-slate-800"}`}>
@@ -161,8 +312,21 @@ function SignUpContent() {
               }
             </p>
             
+            {/* Display error or success message */}
+            {error && (
+              <div className="w-full max-w-md mb-4 p-3 bg-red-100 text-red-700 rounded-lg">
+                {error}
+              </div>
+            )}
+            
+            {success && (
+              <div className="w-full max-w-md mb-4 p-3 bg-green-100 text-green-700 rounded-lg">
+                {success}
+              </div>
+            )}
+            
             {/* Signup form */}
-            <div className="w-full max-w-md space-y-4">
+            <form onSubmit={handleSignUp} className="w-full max-w-md space-y-4">
               <div className="space-y-4">
                 {selectedOption === 'connect' ? (
                   <>
@@ -170,17 +334,26 @@ function SignUpContent() {
                     {/* Tennis Organization Dropdown */}
                     <div className="relative">
                       <select 
+                        value={organization}
+                        onChange={(e) => setOrganization(e.target.value)}
                         className={`w-full appearance-none rounded-lg px-4 py-3 focus:outline-none focus:ring-2 ${darkMode 
                           ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                           : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
-                        defaultValue=""
+                        required
+                        disabled={loadingClubs}
                       >
-                        <option value="" disabled>Select your tennis organization</option>
-                        <option value="jiayou">JiaYou Tennis</option>
-                        <option value="nyc">NYC Tennis Club</option>
-                        <option value="bay">Bay Area Tennis</option>
-                        <option value="la">LA Tennis Academy</option>
-                        <option value="other">Other</option>
+                        <option value="" disabled>
+                          {loadingClubs ? 'Loading clubs...' : 'Select your tennis organization'}
+                        </option>
+                        {clubs.length > 0 ? (
+                          clubs.map((club) => (
+                            <option key={club.id} value={club.id}>
+                              {club.name}
+                            </option>
+                          ))
+                        ) : !loadingClubs ? (
+                          <option value="" disabled>No clubs found</option>
+                        ) : null}
                       </select>
                       <div className={`pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 ${darkMode 
                         ? "text-teal-400" 
@@ -197,83 +370,122 @@ function SignUpContent() {
                     <input 
                       type="text" 
                       placeholder="Club Name" 
+                      value={clubName}
+                      onChange={(e) => setClubName(e.target.value)}
                       className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                         ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                         : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
+                      required
                     />
                     <input 
                       type="text" 
                       placeholder="Club Address" 
+                      value={clubAddress}
+                      onChange={(e) => setClubAddress(e.target.value)}
                       className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                         ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                         : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
+                      required
                     />
                     <div className="grid grid-cols-2 gap-4">
                       <input 
                         type="text" 
                         placeholder="City" 
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
                         className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                           ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                           : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
+                        required
                       />
                       <input 
                         type="text" 
                         placeholder="State/Province" 
+                        value={state}
+                        onChange={(e) => setState(e.target.value)}
                         className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                           ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                           : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
+                        required
                       />
                     </div>
                   </>
                 )}
                 
                 {/* Common fields for both options */}
-            <input
-              type="text"
-              placeholder="Full Name"
+                <input
+                  type="text"
+                  placeholder="Full Name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
                   className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                     ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                     : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
-            />
-            <input
-              type="email"
+                  required
+                />
+                <input
+                  type="email"
                   placeholder="Email Address" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                     ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                     : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
-            />
-            <input
-              type="password"
-              placeholder="Password"
+                  required
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                     ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                     : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
+                  required
+                  minLength={6}
                 />
                 <input 
                   type="password" 
                   placeholder="Confirm Password" 
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
                   className={`w-full rounded-lg px-4 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 ${darkMode 
                     ? "bg-gray-800 border-gray-700 text-white focus:ring-teal-500" 
                     : "bg-white border border-gray-200 text-slate-800 focus:ring-green-400"} transition-colors`}
+                  required
                 />
               </div>
               
               {/* Sign Up button */}
-              <button className={`w-full font-medium py-3 px-4 rounded-lg transition-colors ${darkMode 
-                ? "bg-teal-600 text-white hover:bg-violet-600" 
-                : "bg-green-400 text-white hover:bg-amber-400"}`}>
-                {selectedOption === 'connect' ? 'Create Account' : 'Register Club'}
+              <button 
+                type="submit"
+                disabled={loading}
+                className={`w-full font-medium py-3 px-4 rounded-lg transition-colors ${
+                  loading ? "opacity-70 cursor-not-allowed" : ""
+                } ${darkMode 
+                  ? "bg-teal-600 text-white hover:bg-violet-600" 
+                  : "bg-green-400 text-white hover:bg-amber-400"}`}
+              >
+                {loading 
+                  ? "Creating Account..." 
+                  : (selectedOption === 'connect' ? 'Create Account' : 'Register Club')
+                }
               </button>
               
               {/* Back button */}
-            <button
+              <button
+                type="button"
                 onClick={() => setShowForm(false)}
-                className={`w-full font-medium py-3 px-4 rounded-lg transition-colors ${darkMode 
+                disabled={loading}
+                className={`w-full font-medium py-3 px-4 rounded-lg transition-colors ${
+                  loading ? "opacity-70 cursor-not-allowed" : ""
+                } ${darkMode 
                   ? "bg-gray-800 text-white hover:bg-gray-700 border border-gray-700" 
-                  : "bg-white text-slate-800 hover:bg-gray-50 border border-gray-200"}`}>
+                  : "bg-white text-slate-800 hover:bg-gray-50 border border-gray-200"}`}
+              >
                 Back to options
-            </button>
-            </div>
+              </button>
+            </form>
           </>
         )}
         
@@ -290,9 +502,9 @@ function SignUpContent() {
             ? "text-teal-400 hover:text-violet-400" 
             : "text-amber-400 hover:text-green-400"} transition-colors`}>Privacy Policy</Link>.
         </div>
-        </div>
       </div>
-    );
+    </div>
+  );
 }
 
 // Main page component with Suspense
@@ -301,5 +513,5 @@ export default function SignUpPage() {
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
       <SignUpContent />
     </Suspense>
-    );
-  }
+  );
+}
