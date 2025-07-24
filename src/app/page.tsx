@@ -3,15 +3,29 @@
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
+import { auth } from '../../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false); // Add auth state
+  const [loading, setLoading] = useState(true); // Track loading state
   const featureRefs = useRef<(HTMLDivElement | null)[]>([]);
   
   // Typewriter effect implementation
   const textToType = "The Ultimate Tennis Organization Platform.";
   const [typedText, setTypedText] = useState('');
   
+  // Check authentication status on component mount
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setIsLoggedIn(!!user);
+      setLoading(false);
+    });
+    
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     setTypedText('');
     
@@ -142,19 +156,40 @@ export default function Home() {
             )}
           </button>
           
-          <Link href="/signup" className={`border rounded-lg px-1.5 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 text-[10px] sm:text-xs md:text-sm font-medium transition-all duration-300 flex-shrink-0 ${darkMode 
-            ? "border-teal-600 text-white hover:bg-teal-600" 
-            : "border-green-400 text-slate-800 hover:bg-green-400 hover:text-white"}`}>
-            SIGN UP
-          </Link>
-          <Link href="/findyourorg" className={`text-white rounded-lg px-1.5 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 text-[9px] sm:text-xs md:text-sm font-medium transition-all duration-300 flex items-center flex-shrink-0 ${darkMode 
-            ? "bg-teal-600 hover:bg-violet-600" 
-            : "bg-green-400 hover:bg-amber-400"}`}>
-            <span className="whitespace-nowrap">FIND YOUR ORG</span>
-            <svg viewBox="0 0 24 24" width="8" height="8" className="ml-0.5 w-2 h-2 sm:w-2.5 sm:h-2.5 md:w-3 md:h-3" stroke="currentColor" fill="none">
-              <path d="M15.3 13.71l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 0 1 1.4-1.42L11 14v-4a1 1 0 0 1 2 0v4l1.7-1.71a1 1 0 0 1 1.6 1.42z"></path>
+          {/* Register Club Button - NEW */}
+          <Link href="/register-club" className={`text-white rounded-lg px-3 sm:px-4 md:px-6 py-1 sm:py-2 md:py-2.5 text-xs sm:text-sm md:text-base font-medium transition-all duration-300 flex items-center ${darkMode 
+            ? "bg-violet-600 hover:bg-violet-700" 
+            : "bg-amber-400 hover:bg-amber-500"}`}>
+            <span>REGISTER CLUB</span>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
             </svg>
           </Link>
+          
+          {/* Conditionally render Sign In OR Profile button */}
+          {!loading && (
+            isLoggedIn ? (
+              // Profile Button - for logged in users
+              <Link href="/dashboard" className={`text-white rounded-lg px-3 sm:px-4 md:px-6 py-1 sm:py-2 md:py-2.5 text-xs sm:text-sm md:text-base font-medium transition-all duration-300 flex items-center ${darkMode 
+                ? "bg-blue-600 hover:bg-blue-700" 
+                : "bg-blue-500 hover:bg-blue-600"}`}>
+                <span>MY PROFILE</span>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </Link>
+            ) : (
+              // Sign In Button - for logged out users
+              <Link href="/signin" className={`text-white rounded-lg px-3 sm:px-4 md:px-6 py-1 sm:py-2 md:py-2.5 text-xs sm:text-sm md:text-base font-medium transition-all duration-300 flex items-center ${darkMode 
+                ? "bg-teal-600 hover:bg-teal-700" 
+                : "bg-green-400 hover:bg-green-500"}`}>
+                <span>SIGN IN</span>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                </svg>
+              </Link>
+            )
+          )}
         </div>
       </header>
 

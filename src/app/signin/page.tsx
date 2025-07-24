@@ -4,17 +4,15 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth, db } from '../../../firebase';
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile } from 'firebase/auth';
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import Image from 'next/image';
 import PageTitle from '@/app/components/PageTitle';
 
-export default function SignUpPage() {
+export default function SignInPage() {
   const [darkMode, setDarkMode] = useState(false);
-  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -35,117 +33,93 @@ export default function SignUpPage() {
     localStorage.setItem('darkMode', newMode ? 'true' : 'false');
   };
 
-  // Validate form
-  const validateForm = () => {
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return false;
-    }
-    
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return false;
-    }
-    
-    return true;
-  };
-
-  // Handle email/password sign up
-  const handleSignUp = async (e: React.FormEvent) => {
+  // Handle email/password sign in
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
-    if (!validateForm()) {
-      return;
-    }
-    
     setLoading(true);
     
     try {
-      // Create user with Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
-      // Update profile with display name
-      await updateProfile(user, {
-        displayName: fullName
-      });
+      // Check if user exists in database
+      const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
       
-      // Create user document in Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        fullName: fullName,
-        email: email,
-        userType: 'member', // Default to member
-        createdAt: new Date().toISOString(),
-        photoURL: user.photoURL || '',
-      });
-      
-      setSuccess('Account created successfully! Redirecting to dashboard...');
-      
-      // Redirect to dashboard after successful signup
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 1500);
-      
+      if (userDoc.exists()) {
+        setSuccess('Sign in successful! Redirecting...');
+        
+        // Redirect based on user type
+        const userData = userDoc.data();
+        
+        setTimeout(() => {
+          router.push('/dashboard');
+        }, 1000);
+      } else {
+        // Create a basic profile
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          fullName: email.split('@')[0], // Uses part of email as name
+          email: email,
+          userType: 'member', // Default to member
+          createdAt: new Date().toISOString()
+        });
+        
+        setSuccess('Welcome! Profile created successfully.');
+        setTimeout(() => {
+          router.push('/dashboard');
+        }, 1000);
+      }
     } catch (err: any) {
-      console.error('Sign up error:', err);
+      console.error('Sign in error:', err);
       
       // Handle specific error codes
       switch(err.code) {
-        case 'auth/email-already-in-use':
-          setError('This email is already registered. Try signing in instead.');
+        case 'auth/user-not-found':
+          setError('No account found with this email');
+          break;
+        case 'auth/wrong-password':
+          setError('Incorrect password');
           break;
         case 'auth/invalid-email':
           setError('Invalid email address');
           break;
-        case 'auth/weak-password':
-          setError('Password is too weak. Use at least 6 characters.');
+        case 'auth/too-many-requests':
+          setError('Too many failed login attempts. Try again later or reset your password');
           break;
         default:
-          setError(`Failed to create account: ${err.message}`);
+          setError(`Failed to sign in: ${err.message}`);
       }
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle Google sign up
-  const handleGoogleSignUp = async () => {
+  // Handle Google sign in
+  const handleGoogleSignIn = async () => {
     setError('');
     setLoading(true);
     
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
-      const user = result.user;
       
       // Check if user exists in database
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const userDoc = await getDoc(doc(db, 'users', result.user.uid));
       
       if (userDoc.exists()) {
-        // User already exists, just redirect to dashboard
-        setSuccess('Welcome back! Redirecting to dashboard...');
+        setSuccess('Sign in successful! Redirecting...');
         setTimeout(() => {
           router.push('/dashboard');
         }, 1000);
       } else {
-        // Create a new user document
-        await setDoc(doc(db, 'users', user.uid), {
-          fullName: user.displayName || 'New Member',
-          email: user.email,
-          userType: 'member',
-          createdAt: new Date().toISOString(),
-          photoURL: user.photoURL || '',
-        });
-        
-        setSuccess('Account created successfully! Redirecting to dashboard...');
+        // Redirect to complete profile if first time signing in with Google
+        setSuccess('Welcome! Setting up your account...');
         setTimeout(() => {
-          router.push('/dashboard');
-        }, 1500);
+          router.push('/complete-profile');
+        }, 1000);
       }
     } catch (err: any) {
-      console.error('Google sign up error:', err);
-      setError(`Failed to sign up with Google: ${err.message}`);
+      console.error('Google sign in error:', err);
+      setError(`Failed to sign in with Google: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -155,7 +129,7 @@ export default function SignUpPage() {
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${
       darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'
     }`}>
-      <PageTitle title="Sign Up - Courtly" />
+      <PageTitle title="Sign In - Courtly" />
       
       {/* Dark Mode Toggle */}
       <div className="absolute top-4 right-4 z-10">
@@ -191,11 +165,11 @@ export default function SignUpPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold">Create Your Courtly Account</h1>
+            <h1 className="text-2xl font-bold">Sign In to Courtly</h1>
             <p className={`mt-2 text-center ${
               darkMode ? 'text-gray-400' : 'text-gray-600'
             }`}>
-              Join the tennis community today
+              Enter your credentials to access your account
             </p>
           </div>
 
@@ -213,32 +187,8 @@ export default function SignUpPage() {
             </div>
           )}
 
-          {/* Sign Up Form */}
-          <form onSubmit={handleSignUp} className="space-y-4">
-            {/* Full Name */}
-            <div>
-              <label htmlFor="fullName" className={`block mb-2 text-sm font-medium ${
-                darkMode ? 'text-gray-300' : 'text-gray-700'
-              }`}>
-                Full Name
-              </label>
-              <input
-                type="text"
-                id="fullName"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className={`w-full px-4 py-3 rounded-lg ${
-                  darkMode 
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                    : 'bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-500'
-                } focus:outline-none focus:ring-2 ${
-                  darkMode ? 'focus:ring-teal-500' : 'focus:ring-green-400'
-                }`}
-                placeholder="John Doe"
-                required
-              />
-            </div>
-            
+          {/* Sign In Form */}
+          <form onSubmit={handleSignIn} className="space-y-6">
             {/* Email */}
             <div>
               <label htmlFor="email" className={`block mb-2 text-sm font-medium ${
@@ -265,11 +215,21 @@ export default function SignUpPage() {
 
             {/* Password */}
             <div>
-              <label htmlFor="password" className={`block mb-2 text-sm font-medium ${
-                darkMode ? 'text-gray-300' : 'text-gray-700'
-              }`}>
-                Password
-              </label>
+              <div className="flex justify-between items-center mb-2">
+                <label htmlFor="password" className={`block text-sm font-medium ${
+                  darkMode ? 'text-gray-300' : 'text-gray-700'
+                }`}>
+                  Password
+                </label>
+                <Link 
+                  href="/forgot-password" 
+                  className={`text-xs font-medium hover:underline ${
+                    darkMode ? 'text-teal-400' : 'text-green-500'
+                  }`}
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <input
                 type="password"
                 id="password"
@@ -284,42 +244,14 @@ export default function SignUpPage() {
                 }`}
                 placeholder="••••••••"
                 required
-                minLength={6}
-              />
-              <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Must be at least 6 characters
-              </p>
-            </div>
-            
-            {/* Confirm Password */}
-            <div>
-              <label htmlFor="confirmPassword" className={`block mb-2 text-sm font-medium ${
-                darkMode ? 'text-gray-300' : 'text-gray-700'
-              }`}>
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                id="confirmPassword"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className={`w-full px-4 py-3 rounded-lg ${
-                  darkMode 
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                    : 'bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-500'
-                } focus:outline-none focus:ring-2 ${
-                  darkMode ? 'focus:ring-teal-500' : 'focus:ring-green-400'
-                }`}
-                placeholder="••••••••"
-                required
               />
             </div>
 
-            {/* Sign Up Button */}
+            {/* Sign In Button */}
             <button
               type="submit"
               disabled={loading}
-              className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-colors mt-6 ${
+              className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-colors ${
                 darkMode
                   ? loading ? 'bg-teal-800' : 'bg-teal-600 hover:bg-teal-700'
                   : loading ? 'bg-green-500' : 'bg-green-400 hover:bg-green-500'
@@ -333,24 +265,12 @@ export default function SignUpPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Creating Account...
+                  Signing in...
                 </>
               ) : (
-                "Create Account"
+                "Sign In"
               )}
             </button>
-
-            {/* Terms & Privacy */}
-            <p className={`text-xs text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              By creating an account, you agree to our{' '}
-              <Link href="/terms" className={`underline ${darkMode ? 'text-teal-400' : 'text-green-500'}`}>
-                Terms of Service
-              </Link>{' '}
-              and{' '}
-              <Link href="/privacy" className={`underline ${darkMode ? 'text-teal-400' : 'text-green-500'}`}>
-                Privacy Policy
-              </Link>
-            </p>
 
             {/* Divider */}
             <div className="flex items-center my-6">
@@ -359,10 +279,10 @@ export default function SignUpPage() {
               <div className={`flex-1 border-t ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}></div>
             </div>
 
-            {/* Google Sign Up */}
+            {/* Google Sign In */}
             <button
               type="button"
-              onClick={handleGoogleSignUp}
+              onClick={handleGoogleSignIn}
               disabled={loading}
               className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
                 darkMode
@@ -388,21 +308,21 @@ export default function SignUpPage() {
                   d="M5.277 14.268A7.12 7.12 0 0 1 4.909 12c0-.782.125-1.533.357-2.235L1.24 6.65A11.934 11.934 0 0 0 0 12c0 1.92.445 3.73 1.237 5.335l4.04-3.067Z"
                 />
               </svg>
-              Sign up with Google
+              Continue with Google
             </button>
           </form>
 
-          {/* Sign In Link */}
+          {/* Sign Up Link */}
           <div className="mt-8 text-center">
             <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
-              Already have an account?{' '}
+              Don't have an account?{' '}
               <Link 
-                href="/signin" 
+                href="/signup" 
                 className={`font-medium hover:underline ${
                   darkMode ? 'text-teal-400' : 'text-green-500'
                 }`}
               >
-                Sign In
+                Sign Up
               </Link>
             </p>
           </div>
