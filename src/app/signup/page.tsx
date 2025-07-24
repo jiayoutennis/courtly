@@ -78,6 +78,8 @@ export default function SignUpPage() {
         userType: 'member', // Default to member
         createdAt: new Date().toISOString(),
         photoURL: user.photoURL || '',
+        updatedAt: new Date().toISOString(),
+        organization: [], // Changed from '' to [] for multiple club memberships
       });
       
       setSuccess('Account created successfully! Redirecting to dashboard...');
@@ -136,6 +138,8 @@ export default function SignUpPage() {
           userType: 'member',
           createdAt: new Date().toISOString(),
           photoURL: user.photoURL || '',
+          updatedAt: new Date().toISOString(),
+          organization: [], // Changed from '' to [] for multiple club memberships
         });
         
         setSuccess('Account created successfully! Redirecting to dashboard...');

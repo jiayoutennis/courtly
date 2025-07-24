@@ -20,7 +20,7 @@ interface UserData {
     city: string;
     state: string;
   };
-  organization?: string;
+  organization?: string | string[]; // Can be either string or string array
   createdAt: string;
 }
 
@@ -74,7 +74,7 @@ export default function DashboardPage() {
             // Always fetch club data if organization exists (for both members and admins)
             if (data.organization) {
               // Use the fetchClubDetails function directly
-              await fetchClubDetails(data.organization);
+              await fetchClubDetails(Array.isArray(data.organization) ? data.organization[0] : data.organization);
             }
           }
         } catch (error) {
@@ -131,7 +131,7 @@ export default function DashboardPage() {
         if (data.userType === 'member' && data.organization) {
           try {
             // First try to get club from users collection
-            let clubDocRef = doc(db, "users", data.organization);
+            let clubDocRef = doc(db, "users", Array.isArray(data.organization) ? data.organization[0] : data.organization);
             let clubDoc = await getDoc(clubDocRef);
             
             if (clubDoc.exists()) {
@@ -149,7 +149,7 @@ export default function DashboardPage() {
               
             } else {
               // If not found in users, try publicClubs collection
-              clubDocRef = doc(db, "publicClubs", data.organization);
+              clubDocRef = doc(db, "publicClubs", Array.isArray(data.organization) ? data.organization[0] : data.organization);
               clubDoc = await getDoc(clubDocRef);
               
               if (clubDoc.exists()) {
@@ -193,7 +193,7 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       // Try to fetch club data from users collection first
-      let clubDocRef = doc(db, "users", userData.organization);
+      let clubDocRef = doc(db, "users", Array.isArray(userData.organization) ? userData.organization[0] : userData.organization);
       let clubDoc = await getDoc(clubDocRef);
       
       if (clubDoc.exists()) {
@@ -207,7 +207,7 @@ export default function DashboardPage() {
       } else {
         // If not found in users, try publicClubs collection
         console.log("Club not found in users, checking publicClubs collection");
-        clubDocRef = doc(db, "publicClubs", userData.organization);
+        clubDocRef = doc(db, "publicClubs", Array.isArray(userData.organization) ? userData.organization[0] : userData.organization);
         clubDoc = await getDoc(clubDocRef);
         
         if (clubDoc.exists()) {
@@ -405,7 +405,7 @@ export default function DashboardPage() {
                 
                 {userData?.organization && (
                   <button
-                    onClick={() => fetchClubDetails(userData.organization!)}
+                    onClick={() => userData?.organization && fetchClubDetails(Array.isArray(userData.organization) ? userData.organization[0] : userData.organization)}
                     className={`px-2 py-1 text-xs rounded ${
                       darkMode 
                         ? "bg-teal-600 hover:bg-teal-700 text-white" 
@@ -700,7 +700,7 @@ export default function DashboardPage() {
                       darkMode ? "text-green-400" : "text-green-600"
                     }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                   </div>
                   <h3 className="text-lg font-semibold">Club Settings</h3>

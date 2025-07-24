@@ -259,14 +259,46 @@ export default function ClubRequestsPage() {
         const newClubRef = await addDoc(collection(db, "publicClubs"), clubData);
         console.log("New club created with ID:", newClubRef.id);
         
-        // 2. Delete the submission instead of updating it
+        // 2. Update the submitter's organization array to include the new club ID
+        if (submissionData.submittedBy) {
+          const submitterRef = doc(db, "users", submissionData.submittedBy);
+          const submitterDoc = await getDoc(submitterRef);
+          
+          if (submitterDoc.exists()) {
+            const userData = submitterDoc.data();
+            
+            // Handle organization as an array
+            let organizations = [];
+            
+            // If organization already exists as an array, use it
+            if (userData.organization && Array.isArray(userData.organization)) {
+              organizations = userData.organization;
+            } 
+            // If it exists as a string (old format), convert to array
+            else if (userData.organization) {
+              organizations = [userData.organization];
+            }
+            
+            // Add the new club ID if not already present
+            if (!organizations.includes(newClubRef.id)) {
+              organizations.push(newClubRef.id);
+            }
+            
+            // Update user with the new organizations array and admin status
+            await updateDoc(submitterRef, {
+              organization: organizations,
+              userType: userData.userType === 'member' ? 'admin' : userData.userType
+            });
+            
+            console.log(`Updated user ${submissionData.submittedBy} with club ${newClubRef.id} in organization array`);
+          }
+        }
+        
+        // 3. Delete the submission instead of updating it
         await deleteDoc(submissionRef);
         console.log("Club submission deleted:", requestId);
         
-        // No longer updating user type to admin
-        // User type remains unchanged as requested
-        
-        setSuccess("Club has been approved, added to the directory, and the request has been deleted.");
+        setSuccess("Club has been approved, added to the directory, and the request has been deleted. The submitter now has admin access to this club.");
       } else {
         // For decline, just delete the submission
         await deleteDoc(submissionRef);
