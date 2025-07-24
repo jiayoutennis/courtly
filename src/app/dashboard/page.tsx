@@ -468,7 +468,7 @@ export default function DashboardPage() {
         <h2 className="text-xl font-bold mb-4">Quick Actions</h2>
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-8">
           {/* Court Reservations */}
-          <Link href="/club-reservations" className={`p-6 rounded-lg shadow-md hover:shadow-lg transition ${
+          <Link href="/court-schedule" className={`p-6 rounded-lg shadow-md hover:shadow-lg transition ${
             darkMode ? "bg-gray-800 hover:bg-gray-700" : "bg-white hover:bg-gray-50"
           }`}>
             <div className="flex items-center mb-4">
@@ -577,7 +577,7 @@ export default function DashboardPage() {
           </Link>
           
           {/* Club Settings */}
-          <Link href="#" className={`p-6 rounded-lg shadow-md hover:shadow-lg transition ${
+          <Link href="/admin/club-settings" className={`p-6 rounded-lg shadow-md hover:shadow-lg transition ${
             darkMode ? "bg-gray-800 hover:bg-gray-700" : "bg-white hover:bg-gray-50"
           }`}>
             <div className="flex items-center mb-4">

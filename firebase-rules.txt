@@ -51,13 +51,62 @@ service cloud.firestore {
       // Allow anyone authenticated to create clubs (not update or delete)
       allow create: if request.auth != null;
       
-      // Allow both admins and courtly staff to manage clubs
-      allow update, delete: if request.auth != null &&
+      // Allow admins to update only their own club
+      allow update: if request.auth != null &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         (
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'admin' ||
+          // Club admin can only update their assigned club
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'admin' &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization == clubId) ||
+          // Courtly staff can update any club
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'courtly'
         );
+      
+      allow delete: if request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'courtly';
+      
+      // Courts subcollection rules
+      match /courts/{courtId} {
+        // Anyone can read court data
+        allow read: if request.auth != null;
+        
+        // Only club admins for this club can create/update/delete courts
+        allow create, update, delete: if request.auth != null &&
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          (
+            // Club admin can only manage courts for their club
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'admin' &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization == clubId) ||
+            // Courtly staff can manage any courts
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'courtly'
+          );
+      }
+      
+      // Court Schedule subcollection rules
+      match /courtSchedule/{scheduleId} {
+        // Anyone can read court schedule data
+        allow read: if request.auth != null;
+        
+        // Allow any authenticated user to create schedule slots
+        allow create: if request.auth != null &&
+          request.resource.data.createdBy == request.auth.uid;
+        
+        // Allow users to update/delete their own schedule slots
+        allow update, delete: if request.auth != null &&
+          resource.data.createdBy == request.auth.uid;
+        
+        // Club admins can still manage all schedules for their club
+        allow update, delete: if request.auth != null &&
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          (
+            // Club admin can manage schedules for their club
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'admin' &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization == clubId) ||
+            // Courtly staff can manage any schedules
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'courtly'
+          );
+      }
     }
     
     // Club Join Requests collection
