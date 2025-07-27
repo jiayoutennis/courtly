@@ -91,9 +91,14 @@ export default function CourtSchedulePage() {
             
             // Check if user is an admin and has an organization
             if (userData.userType === 'admin' && userData.organization) {
-              setClubId(userData.organization);
-              await fetchClubData(userData.organization);
-              await fetchCourtData(userData.organization);
+              // Handle organization as either array or string (for backwards compatibility)
+              const clubIdToUse = Array.isArray(userData.organization)
+                ? userData.organization[0]  // Use first club ID if it's an array
+                : userData.organization;    // Use directly if it's a string
+            
+              setClubId(clubIdToUse);
+              await fetchClubData(clubIdToUse);
+              await fetchCourtData(clubIdToUse);
             }
           }
         } catch (error) {

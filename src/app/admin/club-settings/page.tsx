@@ -99,21 +99,28 @@ export default function ManageClubPage() {
         if (userDoc.exists()) {
           const userData = userDoc.data();
           
-          if (userData.userType === 'admin' && userData.organization) {
+          // Check if user is an admin and has at least one organization
+          if (userData.userType === 'admin' && 
+              userData.organization && 
+              Array.isArray(userData.organization) && 
+              userData.organization.length > 0) {
             // User is authorized
             setIsAuthorized(true);
             setUser({
               ...currentUser,
               ...userData
             });
-            setClubId(userData.organization);
+            
+            // Use the first club in the organization array
+            const firstClubId = userData.organization[0];
+            setClubId(firstClubId);
             
             // Fetch club data
-            await fetchClubData(userData.organization);
-            await fetchCourtData(userData.organization);
+            await fetchClubData(firstClubId);
+            await fetchCourtData(firstClubId);
             
           } else {
-            // User is not an admin
+            // User is not an admin or has no clubs
             setIsAuthorized(false);
             setError("You don't have permission to access club settings");
             router.push('/dashboard');
@@ -521,6 +528,34 @@ export default function ManageClubPage() {
           </div>
           <h1 className="text-xl font-bold">Club Settings</h1>
         </div>
+        
+        {/* Club Switcher Dropdown - Added here */}
+        {user && user.organization && Array.isArray(user.organization) && user.organization.length > 1 && (
+          <div className="ml-4">
+            <select
+              value={clubId}
+              onChange={(e) => {
+                const newClubId = e.target.value;
+                setClubId(newClubId);
+                fetchClubData(newClubId);
+                fetchCourtData(newClubId);
+              }}
+              className={`p-1 rounded text-sm ${
+                darkMode 
+                  ? "bg-gray-700 border-gray-600 text-white" 
+                  : "bg-white border-gray-300 text-gray-900"
+              } border`}
+            >
+              {user.organization.map((orgId: string, index: number) => (
+                <option key={orgId} value={orgId}>
+                  {clubSettings && clubId === orgId 
+                    ? clubSettings.name 
+                    : `Club ${index + 1}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </nav>
       
       <div className="container mx-auto px-4 py-8">
