@@ -1,0 +1,425 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===== Helper Functions =====
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Get user's orgId from custom claims
+    function getUserOrgId() {
+      return request.auth.token.orgId;
+    }
+    
+    // Get user's role from custom claims
+    function getUserRole() {
+      return request.auth.token.role;
+    }
+    
+    // Get all user's org memberships
+    function getUserOrgs() {
+      return request.auth.token.orgs;
+    }
+    
+    // Check if user belongs to the org
+    function belongsToOrg(orgId) {
+      return isAuthenticated() && (
+        getUserOrgId() == orgId ||
+        (getUserOrgs() != null && orgId in getUserOrgs())
+      );
+    }
+    
+    // Check if user has specific role in org
+    function hasRole(orgId, role) {
+      return belongsToOrg(orgId) && (
+        (getUserOrgId() == orgId && getUserRole() == role) ||
+        (getUserOrgs() != null && orgId in getUserOrgs() && getUserOrgs()[orgId] == role)
+      );
+    }
+    
+    // Check if user has any of the specified roles
+    function hasAnyRole(orgId, roles) {
+      return belongsToOrg(orgId) && (
+        (getUserOrgId() == orgId && getUserRole() in roles) ||
+        (getUserOrgs() != null && orgId in getUserOrgs() && getUserOrgs()[orgId] in roles)
+      );
+    }
+    
+    // Check if user is staff (owner, manager, frontdesk)
+    function isStaff(orgId) {
+      return hasAnyRole(orgId, ['owner', 'manager', 'frontdesk']);
+    }
+    
+    // Check if user is admin (owner, manager)
+    function isAdmin(orgId) {
+      return hasAnyRole(orgId, ['owner', 'manager']);
+    }
+    
+    // Check if user is owner
+    function isOwner(orgId) {
+      return hasRole(orgId, 'owner');
+    }
+    
+    // Validate timestamp is in the future
+    function isFutureTimestamp(ts) {
+      return ts > request.time;
+    }
+    
+    // Validate required fields exist
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    // Check if user is Courtly admin (from user document)
+    function isCourtlyAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'courtly';
+    }
+    
+    // Check if user is club admin (from user document)
+    function isClubAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'admin';
+    }
+    
+    // ===== Users Collection =====
+    
+    match /users/{userId} {
+      // Users can read their own data, Courtly admins can read all users
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isCourtlyAdmin()
+      );
+      
+      // Users can create their own document (on sign up)
+      allow create: if isAuthenticated() && request.auth.uid == userId &&
+        hasRequiredFields(['email', 'createdAt']);
+      
+      // Users can update their own data, Courtly admins can update any user
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == userId && 
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['email', 'id'])) ||
+        isCourtlyAdmin()
+      );
+      
+      // Only Courtly admins can delete users
+      allow delete: if isCourtlyAdmin();
+    }
+    
+    // ===== UserOrgRoles Collection =====
+    
+    match /userOrgRoles/{roleId} {
+      // Users can read their own org roles, Courtly admins can read all
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isCourtlyAdmin()
+      );
+      
+      // Only org owners can create/update/delete roles, or Courtly admins
+      allow create, update, delete: if isAuthenticated() && (
+        isOwner(request.resource.data.orgId) ||
+        isCourtlyAdmin()
+      );
+    }
+    
+    // ===== Orgs Collection =====
+    
+    match /orgs/{orgId} {
+      // Members can read their org's data, Courtly admins can read all orgs
+      allow read: if belongsToOrg(orgId) || isCourtlyAdmin();
+      
+      // Only authenticated users can create orgs (becomes owner), or Courtly admins
+      allow create: if isAuthenticated() && (
+        hasRequiredFields(['name', 'slug', 'timezone', 'currency', 'contact', 'location']) ||
+        isCourtlyAdmin()
+      );
+      
+      // Only owners can update org settings, or Courtly admins
+      allow update: if (isOwner(orgId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['id', 'createdAt'])) ||
+        isCourtlyAdmin();
+      
+      // Only owners can delete org, or Courtly admins
+      allow delete: if isOwner(orgId) || isCourtlyAdmin();
+    }
+    
+    // ===== Courts Collection =====
+    
+    match /courts/{courtId} {
+      // Members can read courts in their org, Courtly admins can read all
+      allow read: if belongsToOrg(resource.data.orgId) || isCourtlyAdmin();
+      
+      // Only admins can create/update/delete courts, or Courtly admins
+      allow create: if (isAdmin(request.resource.data.orgId) &&
+        request.resource.data.orgId == getUserOrgId() &&
+        hasRequiredFields(['orgId', 'name', 'courtNumber', 'surface', 'indoor', 'hasLights', 'isActive', 'openHours'])) ||
+        isCourtlyAdmin();
+      
+      allow update: if (isAdmin(resource.data.orgId) &&
+        request.resource.data.orgId == resource.data.orgId) ||
+        isCourtlyAdmin();
+      
+      allow delete: if isAdmin(resource.data.orgId) || isCourtlyAdmin();
+    }
+    
+    // ===== Coaches Collection =====
+    
+    match /coaches/{coachId} {
+      // Members can read coaches in their org, Courtly admins can read all
+      allow read: if belongsToOrg(resource.data.orgId) || isCourtlyAdmin();
+      
+      // Coaches can update their own profile (limited fields), or Courtly admins
+      allow update: if (hasRole(resource.data.orgId, 'coach') && resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['bio', 'skills', 'certifications', 'availabilityRules', 'updatedAt']
+        )) || isAdmin(resource.data.orgId) || isCourtlyAdmin();
+      
+      // Only admins can create/delete coaches, or Courtly admins
+      allow create: if (isAdmin(request.resource.data.orgId) &&
+        hasRequiredFields(['orgId', 'userId', 'firstName', 'lastName', 'email', 'isActive'])) ||
+        isCourtlyAdmin();
+      
+      allow delete: if isAdmin(resource.data.orgId) || isCourtlyAdmin();
+    }
+    
+    // ===== Members Collection =====
+    
+    match /members/{memberId} {
+      // Staff can read all members, members can read their own data, Courtly admins can read all
+      allow read: if isStaff(resource.data.orgId) || 
+        (belongsToOrg(resource.data.orgId) && resource.data.userId == request.auth.uid) ||
+        isCourtlyAdmin();
+      
+      // Members can update their own data (limited fields), or Courtly admins
+      allow update: if (resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['phone', 'emergencyContact', 'updatedAt']
+        )) || isStaff(resource.data.orgId) || isCourtlyAdmin();
+      
+      // Only staff can create/delete members, or Courtly admins
+      allow create: if (isStaff(request.resource.data.orgId) &&
+        hasRequiredFields(['orgId', 'firstName', 'lastName', 'email', 'tier', 'status', 'joinedAt'])) ||
+        isCourtlyAdmin();
+      
+      allow delete: if isAdmin(resource.data.orgId) || isCourtlyAdmin();
+    }
+    
+    // ===== RuleSets Collection =====
+    
+    match /ruleSets/{ruleSetId} {
+      // Members can read rule sets in their org, Courtly admins can read all
+      allow read: if belongsToOrg(resource.data.orgId) || isCourtlyAdmin();
+      
+      // Only admins can create/update/delete rule sets, or Courtly admins
+      allow create, update: if isAdmin(request.resource.data.orgId) || isCourtlyAdmin();
+      allow delete: if isAdmin(resource.data.orgId) || isCourtlyAdmin();
+    }
+    
+    // ===== Programs Collection =====
+    
+    match /programs/{programId} {
+      // Members can read programs in their org, Courtly admins can read all
+      allow read: if belongsToOrg(resource.data.orgId) || isCourtlyAdmin();
+      
+      // Only staff can create/update programs, or Courtly admins
+      allow create, update: if isStaff(request.resource.data.orgId) || isCourtlyAdmin();
+      
+      // Only admins can delete programs, or Courtly admins
+      allow delete: if isAdmin(resource.data.orgId) || isCourtlyAdmin();
+    }
+    
+    // ===== Blocks Collection =====
+    
+    match /blocks/{blockId} {
+      // Members can read blocks in their org, Courtly admins can read all
+      allow read: if belongsToOrg(resource.data.orgId) || isCourtlyAdmin();
+      
+      // Staff can create/update/delete blocks, or Courtly admins
+      allow create: if (isStaff(request.resource.data.orgId) &&
+        request.resource.data.createdBy == request.auth.uid) ||
+        isCourtlyAdmin();
+      
+      allow update, delete: if isStaff(resource.data.orgId) || isCourtlyAdmin();
+    }
+    
+    // ===== Bookings Collection =====
+    
+    match /bookings/{bookingId} {
+      // Staff can read all bookings, members can read their own bookings, Courtly admins can read all
+      allow read: if isStaff(resource.data.orgId) ||
+        (belongsToOrg(resource.data.orgId) && resource.data.memberId == request.auth.uid) ||
+        isCourtlyAdmin();
+      
+      // Bookings can only be created via Cloud Functions (prevents conflicts), except Courtly admins
+      allow create: if isCourtlyAdmin();
+      
+      // Members can cancel their own bookings, staff can update any booking, or Courtly admins
+      allow update: if (resource.data.memberId == request.auth.uid &&
+        request.resource.data.status == 'canceled' &&
+        resource.data.status in ['pending_payment', 'confirmed']
+      ) || isStaff(resource.data.orgId) || isCourtlyAdmin();
+      
+      // Only admins can delete bookings, or Courtly admins
+      allow delete: if isAdmin(resource.data.orgId) || isCourtlyAdmin();
+    }
+    
+    // ===== Payments Collection =====
+    
+    match /payments/{paymentId} {
+      // Staff can read all payments, members can read their own payments, Courtly admins can read all
+      allow read: if isStaff(resource.data.orgId) ||
+        (belongsToOrg(resource.data.orgId) && resource.data.memberId == request.auth.uid) ||
+        isCourtlyAdmin();
+      
+      // Payments can only be created/updated via Cloud Functions (webhook), except Courtly admins
+      allow create, update, delete: if isCourtlyAdmin();
+    }
+    
+    // ===== Waitlist Collection =====
+    
+    match /waitlist/{waitlistId} {
+      // Staff can read all waitlist entries, members can read their own, Courtly admins can read all
+      allow read: if isStaff(resource.data.orgId) ||
+        (belongsToOrg(resource.data.orgId) && resource.data.memberId == request.auth.uid) ||
+        isCourtlyAdmin();
+      
+      // Members can join waitlist, or Courtly admins
+      allow create: if (belongsToOrg(request.resource.data.orgId) &&
+        request.resource.data.memberId == request.auth.uid) ||
+        isCourtlyAdmin();
+      
+      // Staff can update/delete waitlist entries, or Courtly admins
+      allow update, delete: if isStaff(resource.data.orgId) || isCourtlyAdmin();
+    }
+    
+    // ===== AuditLogs Collection =====
+    
+    match /auditLogs/{logId} {
+      // Only admins can read audit logs, or Courtly admins
+      allow read: if isAdmin(resource.data.orgId) || isCourtlyAdmin();
+      
+      // Audit logs can only be created via Cloud Functions, except Courtly admins
+      allow create, update, delete: if isCourtlyAdmin();
+    }
+    
+    // ===== UtilizationMetrics Collection =====
+    
+    match /utilizationMetrics/{metricId} {
+      // Staff can read utilization metrics, or Courtly admins
+      allow read: if isStaff(resource.data.orgId) || isCourtlyAdmin();
+      
+      // Metrics can only be created/updated via Cloud Functions, except Courtly admins
+      allow create, update, delete: if isCourtlyAdmin();
+    }
+    
+    // ===== PublicClubs Collection (legacy) =====
+    
+    match /publicClubs/{clubId} {
+      // Anyone can read public clubs
+      allow read: if true;
+      
+      // Only Courtly admins can modify public clubs
+      allow create, update, delete: if isCourtlyAdmin();
+      
+      // Helper function to check if user is a member of this club
+      function isClubMember(clubId) {
+        return isAuthenticated() && 
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          (
+            // Check if organization is a string and matches clubId
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization is string &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization == clubId) ||
+            // Check if organization is an array and contains clubId
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization is list &&
+             clubId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization)
+          );
+      }
+      
+      // Courts subcollection
+      match /courts/{courtId} {
+        // Anyone can read courts
+        allow read: if true;
+        
+        // Only Courtly admins can modify courts
+        allow create, update, delete: if isCourtlyAdmin();
+      }
+      
+      // Members subcollection
+      match /members/{memberId} {
+        // Anyone can read members (for coach selection, etc.)
+        allow read: if true;
+        
+        // Only Courtly admins can modify members
+        allow create, update, delete: if isCourtlyAdmin();
+      }
+      
+      // Court Schedule subcollection
+      match /courtSchedule/{scheduleId} {
+        // Anyone can read court schedule
+        allow read: if true;
+        
+        // Only Courtly admins can modify court schedule
+        allow create, update, delete: if isCourtlyAdmin();
+      }
+      
+      // Bookings subcollection
+      match /bookings/{bookingId} {
+        // Members can read all bookings (for conflict checking), or read their own
+        allow read: if isClubMember(clubId) || 
+          (isAuthenticated() && resource.data.userId == request.auth.uid);
+        
+        // Members can create bookings if they belong to the club
+        allow create: if isClubMember(clubId) && 
+          request.resource.data.userId == request.auth.uid;
+        
+        // Members can update their own bookings (to cancel), Courtly admins can update any
+        allow update: if (isAuthenticated() && resource.data.userId == request.auth.uid) ||
+          isCourtlyAdmin();
+        
+        // Members can delete their own bookings, Courtly admins can delete any
+        allow delete: if (isAuthenticated() && resource.data.userId == request.auth.uid) ||
+          isCourtlyAdmin();
+      }
+      
+      // Lesson Requests subcollection
+      match /lessonRequests/{requestId} {
+        // Members can read all lesson requests, or read their own
+        allow read: if isClubMember(clubId) ||
+          (isAuthenticated() && resource.data.userId == request.auth.uid);
+        
+        // Members can create lesson requests if they belong to the club
+        allow create: if isClubMember(clubId) &&
+          request.resource.data.userId == request.auth.uid;
+        
+        // Members can update their own requests, Courtly admins can update any
+        allow update: if (isAuthenticated() && resource.data.userId == request.auth.uid) ||
+          isCourtlyAdmin();
+        
+        // Members can delete their own requests, Courtly admins can delete any
+        allow delete: if (isAuthenticated() && resource.data.userId == request.auth.uid) ||
+          isCourtlyAdmin();
+      }
+      
+      // Payments subcollection (for future use)
+      match /payments/{paymentId} {
+        // Members can read their own payments
+        allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+        
+        // Only Courtly admins can modify payments (or Cloud Functions)
+        allow create, update, delete: if isCourtlyAdmin();
+      }
+    }
+    
+    // ===== Catch-all: Courtly admins have full access =====
+    match /{document=**} {
+      // Courtly admins have full read/write access to any collection
+      allow read, write: if isCourtlyAdmin();
+    }
+  }
+}

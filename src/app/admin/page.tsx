@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth, db } from '../../../firebase';
 import { 
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, 
+  collection, doc, getDoc, getDocs, updateDoc, 
   deleteDoc, query, where, limit, orderBy, addDoc 
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -105,7 +105,7 @@ export default function AdminPage() {
       // For security reasons, we'll only allow access to specific collections
       const allowedCollections = [
         'users',
-        'publicClubs',
+        'orgs',
         'reservations',
         'locations',
         'events'
@@ -180,14 +180,6 @@ export default function AdminPage() {
       setEditedData(JSON.parse(JSON.stringify(currentDocument)));
     }
     setEditMode(!editMode);
-  };
-
-  // Handle field changes in edit mode
-  const handleFieldChange = (field: string, value: any) => {
-    setEditedData((prev: any) => ({
-      ...prev,
-      [field]: value
-    }));
   };
 
   // Handle JSON edit in advanced mode

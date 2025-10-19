@@ -1,0 +1,408 @@
+/**
+ * Zod validation schemas for Courtly
+ * These schemas are shared between client and server
+ */
+
+import { z } from 'zod';
+
+// ===== Enums =====
+
+export const RoleSchema = z.enum(['owner', 'manager', 'frontdesk', 'coach', 'member']);
+
+export const BookingStatusSchema = z.enum([
+  'pending_payment',
+  'confirmed',
+  'in_use',
+  'completed',
+  'canceled',
+  'no_show',
+  'refunded',
+]);
+
+export const PaymentStatusSchema = z.enum([
+  'pending',
+  'processing',
+  'succeeded',
+  'failed',
+  'canceled',
+  'refunded',
+]);
+
+export const PaymentTypeSchema = z.enum(['booking', 'program', 'membership', 'refund']);
+
+export const CourtSurfaceSchema = z.enum(['hard', 'clay', 'grass', 'carpet', 'other']);
+
+export const MemberStatusSchema = z.enum(['active', 'inactive', 'suspended', 'at_risk', 'unpaid']);
+
+export const MemberTierSchema = z.enum(['basic', 'premium', 'vip']);
+
+export const ProgramTypeSchema = z.enum(['clinic', 'league', 'camp', 'lesson', 'tournament']);
+
+export const RecurrencePatternSchema = z.enum(['once', 'daily', 'weekly', 'biweekly', 'monthly']);
+
+export const WaitlistStrategySchema = z.enum(['fifo', 'priority', 'manual']);
+
+export const AuditActionSchema = z.enum([
+  'create',
+  'update',
+  'delete',
+  'approve',
+  'cancel',
+  'refund',
+  'assign',
+  'unassign',
+]);
+
+// ===== Reusable Schemas =====
+
+const TimestampSchema = z.object({
+  seconds: z.number(),
+  nanoseconds: z.number(),
+});
+
+const TimeStringSchema = z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, 'Must be HH:mm format');
+
+const CurrencyAmountSchema = z.object({
+  amount: z.number().nonnegative(),
+  currency: z.string().length(3).toUpperCase(),
+});
+
+// ===== Core Entity Schemas =====
+
+export const OrgSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).max(100),
+  slug: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/),
+  timezone: z.string().min(1),
+  currency: z.string().length(3).toUpperCase(),
+  brand: z.object({
+    logoUrl: z.string().url().optional(),
+    primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+    secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  }),
+  contact: z.object({
+    email: z.string().email(),
+    phone: z.string().optional(),
+    address: z.object({
+      street: z.string(),
+      city: z.string(),
+      state: z.string(),
+      postalCode: z.string(),
+      country: z.string(),
+    }).optional(),
+  }),
+  location: z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+  }),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+});
+
+export const CourtSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  name: z.string().min(1).max(100),
+  courtNumber: z.number().int().positive(),
+  surface: CourtSurfaceSchema,
+  indoor: z.boolean(),
+  hasLights: z.boolean(),
+  isActive: z.boolean(),
+  openHours: z.array(z.object({
+    dayOfWeek: z.number().int().min(0).max(6),
+    openTime: TimeStringSchema,
+    closeTime: TimeStringSchema,
+  })),
+  maintenanceSchedule: z.array(z.object({
+    start: TimestampSchema,
+    end: TimestampSchema,
+    reason: z.string(),
+  })),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+});
+
+export const CoachSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  userId: z.string().min(1),
+  firstName: z.string().min(1).max(50),
+  lastName: z.string().min(1).max(50),
+  email: z.string().email(),
+  phone: z.string().optional(),
+  bio: z.string().max(500).optional(),
+  skills: z.array(z.string()),
+  certifications: z.array(z.object({
+    name: z.string(),
+    issuedBy: z.string(),
+    issuedDate: TimestampSchema,
+    expiryDate: TimestampSchema.optional(),
+  })),
+  payRate: CurrencyAmountSchema.extend({
+    hourlyRate: z.number().nonnegative(),
+  }).omit({ amount: true }),
+  availabilityRules: z.array(z.object({
+    dayOfWeek: z.number().int().min(0).max(6),
+    startTime: TimeStringSchema,
+    endTime: TimeStringSchema,
+  })),
+  isActive: z.boolean(),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+});
+
+export const MemberSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  userId: z.string().min(1).optional(),
+  firstName: z.string().min(1).max(50),
+  lastName: z.string().min(1).max(50),
+  email: z.string().email(),
+  phone: z.string().optional(),
+  tier: MemberTierSchema,
+  status: MemberStatusSchema,
+  stripeCustomerId: z.string().optional(),
+  emergencyContact: z.object({
+    name: z.string(),
+    phone: z.string(),
+    relationship: z.string(),
+  }).optional(),
+  joinedAt: TimestampSchema,
+  lastActivityAt: TimestampSchema.optional(),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+});
+
+export const RuleSetSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  name: z.string().min(1).max(100),
+  bookingWindowDays: z.number().int().positive(),
+  minBufferMinutes: z.number().int().nonnegative(),
+  maxAdvanceDays: z.number().int().positive(),
+  cancelPolicy: z.object({
+    hoursBeforeStart: z.number().nonnegative(),
+    refundPercentage: z.number().min(0).max(100),
+  }),
+  sunsetCutoffOverride: TimeStringSchema.optional(),
+  lightsFeeMultiplier: z.number().positive().optional(),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+});
+
+export const ProgramSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  name: z.string().min(1).max(100),
+  description: z.string().max(1000).optional(),
+  type: ProgramTypeSchema,
+  recurrence: RecurrencePatternSchema,
+  startDate: TimestampSchema,
+  endDate: TimestampSchema.optional(),
+  capacity: z.number().int().positive(),
+  currentEnrollment: z.number().int().nonnegative(),
+  price: CurrencyAmountSchema,
+  coachIds: z.array(z.string()),
+  courtPool: z.array(z.string()),
+  schedule: z.array(z.object({
+    dayOfWeek: z.number().int().min(0).max(6),
+    startTime: TimeStringSchema,
+    endTime: TimeStringSchema,
+  })),
+  waitlistEnabled: z.boolean(),
+  waitlistStrategy: WaitlistStrategySchema,
+  isActive: z.boolean(),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+});
+
+export const BlockSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  courtIds: z.array(z.string().min(1)).min(1),
+  start: TimestampSchema,
+  end: TimestampSchema,
+  reason: z.string().min(1).max(200),
+  isRecurring: z.boolean(),
+  recurrencePattern: RecurrencePatternSchema.optional(),
+  createdBy: z.string().min(1),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+});
+
+export const BookingSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  courtId: z.string().min(1),
+  start: TimestampSchema,
+  end: TimestampSchema,
+  memberId: z.string().optional(),
+  guestEmail: z.string().email().optional(),
+  guestName: z.string().optional(),
+  price: CurrencyAmountSchema,
+  status: BookingStatusSchema,
+  coachId: z.string().optional(),
+  programId: z.string().optional(),
+  notes: z.string().max(500).optional(),
+  createdBy: z.string().min(1),
+  confirmedAt: TimestampSchema.optional(),
+  canceledAt: TimestampSchema.optional(),
+  cancellationReason: z.string().optional(),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+}).refine(
+  (data) => !!data.memberId || !!data.guestEmail,
+  { message: 'Either memberId or guestEmail must be provided' }
+);
+
+export const PaymentSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  stripePaymentIntentId: z.string().min(1),
+  stripeCheckoutSessionId: z.string().optional(),
+  amount: z.number().nonnegative(),
+  currency: z.string().length(3).toUpperCase(),
+  status: PaymentStatusSchema,
+  type: PaymentTypeSchema,
+  bookingId: z.string().optional(),
+  programId: z.string().optional(),
+  memberId: z.string().optional(),
+  refundedAmount: z.number().nonnegative().optional(),
+  refundReason: z.string().optional(),
+  metadata: z.record(z.string()),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+});
+
+export const WaitlistSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  programId: z.string().min(1),
+  memberId: z.string().min(1),
+  position: z.number().int().positive(),
+  notifiedAt: TimestampSchema.optional(),
+  checkoutLinkExpiry: TimestampSchema.optional(),
+  promotedAt: TimestampSchema.optional(),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+});
+
+export const AuditLogSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  actor: z.string().min(1),
+  action: AuditActionSchema,
+  target: z.string().min(1),
+  targetType: z.string().min(1),
+  diff: z.record(z.object({
+    before: z.unknown(),
+    after: z.unknown(),
+  })).optional(),
+  metadata: z.record(z.unknown()).optional(),
+  timestamp: TimestampSchema,
+});
+
+// ===== API Input/Output Schemas =====
+
+export const CreateBookingInputSchema = z.object({
+  orgId: z.string().min(1),
+  courtId: z.string().min(1),
+  start: z.date(),
+  end: z.date(),
+  memberId: z.string().optional(),
+  guestEmail: z.string().email().optional(),
+  guestName: z.string().optional(),
+  coachId: z.string().optional(),
+  notes: z.string().max(500).optional(),
+}).refine(
+  (data) => !!data.memberId || !!data.guestEmail,
+  { message: 'Either memberId or guestEmail must be provided' }
+).refine(
+  (data) => data.end > data.start,
+  { message: 'End time must be after start time' }
+);
+
+export const CreateBookingOutputSchema = z.object({
+  bookingId: z.string().min(1),
+  checkoutUrl: z.string().url().optional(),
+  expiresAt: z.date(),
+});
+
+export const ConfirmBookingInputSchema = z.object({
+  bookingId: z.string().min(1),
+  paymentIntentId: z.string().min(1),
+});
+
+export const CancelBookingInputSchema = z.object({
+  bookingId: z.string().min(1),
+  reason: z.string().optional(),
+});
+
+export const CreateCourtInputSchema = CourtSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const UpdateCourtInputSchema = CreateCourtInputSchema.partial().extend({
+  id: z.string().min(1),
+});
+
+export const CreateProgramInputSchema = ProgramSchema.omit({
+  id: true,
+  currentEnrollment: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const UpdateProgramInputSchema = CreateProgramInputSchema.partial().extend({
+  id: z.string().min(1),
+});
+
+// ===== Form Validation Schemas =====
+
+export const SignInFormSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+export const SignUpFormSchema = z.object({
+  firstName: z.string().min(1, 'First name is required').max(50),
+  lastName: z.string().min(1, 'Last name is required').max(50),
+  email: z.string().email('Invalid email address'),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ['confirmPassword'],
+});
+
+export const CreateOrgFormSchema = z.object({
+  name: z.string().min(1, 'Organization name is required').max(100),
+  slug: z.string()
+    .min(1, 'Slug is required')
+    .max(50)
+    .regex(/^[a-z0-9-]+$/, 'Slug must contain only lowercase letters, numbers, and hyphens'),
+  timezone: z.string().min(1, 'Timezone is required'),
+  currency: z.string().length(3, 'Currency must be 3 characters').toUpperCase(),
+  email: z.string().email('Invalid email address'),
+  phone: z.string().optional(),
+  street: z.string().min(1, 'Street address is required'),
+  city: z.string().min(1, 'City is required'),
+  state: z.string().min(1, 'State is required'),
+  postalCode: z.string().min(1, 'Postal code is required'),
+  country: z.string().min(1, 'Country is required'),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
+
+// Type inference helpers
+export type CreateBookingInputType = z.infer<typeof CreateBookingInputSchema>;
+export type CreateBookingOutputType = z.infer<typeof CreateBookingOutputSchema>;
+export type SignInFormType = z.infer<typeof SignInFormSchema>;
+export type SignUpFormType = z.infer<typeof SignUpFormSchema>;
+export type CreateOrgFormType = z.infer<typeof CreateOrgFormSchema>;

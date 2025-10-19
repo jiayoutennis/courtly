@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth, db } from '../../../../firebase';
 import { 
-  collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc,
-  query, where, orderBy, serverTimestamp 
+  collection, getDocs, doc, getDoc, updateDoc, deleteDoc,
+  query, orderBy, serverTimestamp 
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { states } from '@/app/utils/states';
 import PageTitle from '@/app/components/PageTitle';
+import { initializeClubCollections } from '@/lib/initializeClub';
 
 // Club type definition
 interface Club {
@@ -27,8 +28,18 @@ interface Club {
   courts: number;
   courtType: string;
   approved: boolean;
+  assignedAdmins?: string[]; // Array of user IDs who are admins of this club
   createdAt?: any;
   createdBy?: string;
+}
+
+// User type for admin selection
+interface User {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  userType: string;
 }
 
 export default function ManageClubsPage() {
@@ -37,12 +48,20 @@ export default function ManageClubsPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [user, setUser] = useState<any>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [clubs, setClubs] = useState<Club[]>([]);
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [fetchingClubs, setFetchingClubs] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [selectedAdmins, setSelectedAdmins] = useState<string[]>([]);
+
+  // Debug: Log clubs state changes
+  useEffect(() => {
+    console.log('Clubs state updated:', clubs.length, 'clubs');
+    console.log('Clubs data:', clubs);
+  }, [clubs]);
   
   // Form data for new club
   const [formData, setFormData] = useState<Club>({
@@ -57,7 +76,8 @@ export default function ManageClubsPage() {
     description: '',
     courts: 1,
     courtType: 'hard',
-    approved: false
+    approved: true, // Default to true for admin-created clubs
+    assignedAdmins: []
   });
 
   // Initialize dark mode from localStorage
@@ -82,7 +102,6 @@ export default function ManageClubsPage() {
       if (!currentUser) {
         // No user is signed in
         setIsAuthorized(false);
-        setUser(null);
         router.push('/signin');
         return;
       }
@@ -97,24 +116,19 @@ export default function ManageClubsPage() {
           if (userData.userType === 'courtly') {
             // User is authorized
             setIsAuthorized(true);
-            setUser({
-              ...currentUser,
-              ...userData
-            });
             
-            // Fetch clubs
+            // Fetch clubs and users
             fetchClubs();
+            fetchUsers();
           } else {
             // User is not authorized
             setIsAuthorized(false);
-            setUser(null);
             setError("You don't have permission to access this page");
             router.push('/dashboard');
           }
         } else {
           // User document doesn't exist
           setIsAuthorized(false);
-          setUser(null);
           setError("User profile not found");
           router.push('/signin');
         }
@@ -132,26 +146,100 @@ export default function ManageClubsPage() {
 
   // Fetch clubs from Firestore
   const fetchClubs = async () => {
+    setFetchingClubs(true);
     try {
-      const clubsQuery = query(
-        collection(db, "publicClubs"),
-        orderBy("name")
-      );
+      console.log('Fetching clubs from Firestore...');
       
-      const querySnapshot = await getDocs(clubsQuery);
+      // Try with orderBy first, fall back to no ordering if index doesn't exist
+      let querySnapshot;
+      try {
+        const clubsQuery = query(
+          collection(db, "orgs"),
+          orderBy("name")
+        );
+        querySnapshot = await getDocs(clubsQuery);
+        console.log('Fetched with orderBy, docs count:', querySnapshot.size);
+      } catch (indexError: any) {
+        console.warn('Index may not exist, fetching without ordering:', indexError);
+        // Fall back to fetching without ordering
+        querySnapshot = await getDocs(collection(db, "orgs"));
+        console.log('Fetched without orderBy, docs count:', querySnapshot.size);
+      }
+      
       const clubsList: Club[] = [];
       
       querySnapshot.forEach((doc) => {
-        clubsList.push({
+        const data = doc.data();
+        console.log('Club document:', doc.id, data);
+        const clubData = {
           id: doc.id,
-          ...doc.data()
-        } as Club);
+          name: data.name || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          website: data.website || '',
+          address: data.address || '',
+          city: data.city || '',
+          state: data.state || '',
+          zip: data.postalCode || '',
+          description: data.description || '',
+          courts: data.courtCount || 1,
+          courtType: 'hard', // Default
+          approved: data.isVerified || false,
+          assignedAdmins: data.assignedAdmins || [],
+          createdAt: data.createdAt,
+          createdBy: data.createdBy
+        } as Club;
+        console.log('Processed club:', clubData.name, 'approved:', clubData.approved);
+        clubsList.push(clubData);
       });
       
+      // Sort manually if we couldn't use orderBy
+      clubsList.sort((a, b) => a.name.localeCompare(b.name));
+      
+      console.log('Total clubs fetched:', clubsList.length);
+      console.log('Setting clubs state with:', clubsList);
       setClubs(clubsList);
     } catch (error) {
       console.error("Error fetching clubs:", error);
       setError("Failed to load clubs. Please try again later.");
+    } finally {
+      setFetchingClubs(false);
+    }
+  };
+
+  // Fetch users who can be club admins (courtly admins and club admins)
+  const fetchUsers = async () => {
+    try {
+      console.log('Fetching users for admin selection...');
+      const usersQuery = collection(db, "users");
+      const querySnapshot = await getDocs(usersQuery);
+      const usersList: User[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        // Only include users who can be club admins (courtly admins or regular admins)
+        if (data.userType === 'courtly' || data.userType === 'admin') {
+          usersList.push({
+            id: doc.id,
+            firstName: data.firstName || '',
+            lastName: data.lastName || '',
+            email: data.email || '',
+            userType: data.userType
+          });
+        }
+      });
+      
+      // Sort by name
+      usersList.sort((a, b) => {
+        const nameA = `${a.firstName} ${a.lastName}`.trim();
+        const nameB = `${b.firstName} ${b.lastName}`.trim();
+        return nameA.localeCompare(nameB);
+      });
+      
+      console.log('Total users fetched for admin selection:', usersList.length);
+      setUsers(usersList);
+    } catch (error) {
+      console.error("Error fetching users:", error);
     }
   };
 
@@ -173,13 +261,40 @@ export default function ManageClubsPage() {
     }
   };
 
-  // Handle checkbox changes
-  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: checked
+  // Toggle admin selection
+  const toggleAdminSelection = (userId: string) => {
+    setSelectedAdmins(prev => {
+      if (prev.includes(userId)) {
+        return prev.filter(id => id !== userId);
+      } else {
+        return [...prev, userId];
+      }
     });
+  };
+
+  // Update user organizations to include club membership
+  const updateUserOrganizations = async (clubId: string, adminIds: string[]) => {
+    try {
+      for (const userId of adminIds) {
+        const userRef = doc(db, "users", userId);
+        const userDoc = await getDoc(userRef);
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          const currentOrgs = userData.organization || [];
+          
+          // Add club to user's organizations if not already there
+          if (!currentOrgs.includes(clubId)) {
+            await updateDoc(userRef, {
+              organization: [...currentOrgs, clubId],
+              updatedAt: serverTimestamp()
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error updating user organizations:", error);
+    }
   };
 
   // Handle form submission for new club
@@ -195,23 +310,68 @@ export default function ManageClubsPage() {
         throw new Error("Please fill in all required fields");
       }
       
-      // Add timestamp and user info
-      const clubData = {
-        ...formData,
-        createdAt: serverTimestamp(),
-        createdBy: auth.currentUser?.uid
-      };
-      
       // Check if we're editing or creating
       if (isEditing && selectedClub?.id) {
-        // Update existing club
-        const { id, ...dataToUpdate } = clubData;
-        await updateDoc(doc(db, "publicClubs", selectedClub.id), dataToUpdate);
+        // Update existing club - map to org schema
+        const orgData = {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone || '',
+          website: formData.website || '',
+          address: formData.address || '',
+          city: formData.city,
+          state: formData.state,
+          postalCode: formData.zip || '',
+          description: formData.description || '',
+          courtCount: formData.courts || 1,
+          assignedAdmins: selectedAdmins,
+          updatedAt: serverTimestamp()
+        };
+        
+        await updateDoc(doc(db, "orgs", selectedClub.id), orgData);
+        
+        // Update user organization field for newly assigned admins
+        await updateUserOrganizations(selectedClub.id, selectedAdmins);
+        
         setSuccess(`Club "${formData.name}" updated successfully!`);
       } else {
-        // Create new club
-        await addDoc(collection(db, "publicClubs"), clubData);
-        setSuccess(`Club "${formData.name}" added successfully!`);
+        // Create new club - automatically approved when added by Courtly admin
+        // Generate a new club ID first
+        const newClubRef = doc(collection(db, "orgs"));
+        const newClubId = newClubRef.id;
+        
+        const newClubData = {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone || null,
+          website: formData.website || null,
+          address: formData.address || null,
+          city: formData.city,
+          state: formData.state,
+          zip: formData.zip || null,
+          description: formData.description || null,
+          courts: formData.courts || 1,
+          courtType: formData.courtType || 'hard',
+          approved: true,
+          assignedAdmins: selectedAdmins,
+          submittedBy: auth.currentUser?.uid,
+          submitterEmail: auth.currentUser?.email || '',
+          submitterName: auth.currentUser?.displayName || 'Admin'
+        };
+        
+        console.log('Creating club with ID:', newClubId);
+        
+        // Initialize all club subcollections (courts, members, bookings, etc.)
+        // This will create the org document with FULL schema including operatingHours and bookingSettings
+        await initializeClubCollections(newClubId, newClubData);
+        
+        // Update user organization field for assigned admins
+        await updateUserOrganizations(newClubId, selectedAdmins);
+        
+        setSuccess(`Club "${formData.name}" added and approved successfully with all collections initialized!`);
+        
+        // Wait a moment for Firestore to propagate the change
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
       
       // Reset form and refresh clubs list
@@ -229,10 +389,34 @@ export default function ManageClubsPage() {
   const editClub = (club: Club) => {
     setSelectedClub(club);
     setFormData(club);
+    setSelectedAdmins(club.assignedAdmins || []);
     setIsEditing(true);
     
     // Scroll to form
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Approve club (for clubs that are pending)
+  const approveClub = async (clubId: string, clubName: string) => {
+    if (!clubId) return;
+    
+    if (!window.confirm(`Approve "${clubName}"? This will make it visible in the clubs directory.`)) {
+      return;
+    }
+    
+    try {
+      await updateDoc(doc(db, "orgs", clubId), {
+        isVerified: true,
+        isActive: true,
+        updatedAt: serverTimestamp()
+      });
+      
+      setSuccess(`Club "${clubName}" has been approved!`);
+      fetchClubs();
+    } catch (error) {
+      console.error("Error approving club:", error);
+      setError("Failed to approve club. Please try again.");
+    }
   };
 
   // Delete club
@@ -246,7 +430,7 @@ export default function ManageClubsPage() {
     setLoading(true);
     
     try {
-      await deleteDoc(doc(db, "publicClubs", clubId));
+      await deleteDoc(doc(db, "orgs", clubId));
       setSuccess("Club deleted successfully");
       fetchClubs();
     } catch (error) {
@@ -271,8 +455,10 @@ export default function ManageClubsPage() {
       description: '',
       courts: 1,
       courtType: 'hard',
-      approved: false
+      approved: true, // Always true for admin-created clubs
+      assignedAdmins: []
     });
+    setSelectedAdmins([]);
     setSelectedClub(null);
     setIsEditing(false);
   };
@@ -313,80 +499,83 @@ export default function ManageClubsPage() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${
-      darkMode ? "bg-gray-900 text-gray-50" : "bg-gray-50 text-gray-900"
+      darkMode ? "bg-[#0a0a0a] text-white" : "bg-white text-gray-900"
     }`}>
       <PageTitle title="Manage Clubs - Courtly Admin" />
       
       {/* Header */}
-      <header className={`py-4 px-6 shadow-md flex items-center justify-between ${
-        darkMode ? "bg-gray-800" : "bg-white"
+      <header className={`border-b transition-colors duration-300 ${
+        darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'
       }`}>
-        <div className="flex items-center space-x-4">
-          <Link href="/dashboard" className="flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back to Dashboard
-          </Link>
-          <h1 className="text-xl font-bold">Club Management</h1>
-        </div>
-        
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={toggleDarkMode}
-            className={`p-2 rounded-full ${darkMode 
-              ? "bg-gray-700 text-teal-400 hover:bg-gray-600" 
-              : "bg-gray-200 text-amber-500 hover:bg-gray-300"
-            }`}
-            aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {darkMode ? (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-              </svg>
-            )}
-          </button>
-          <div className={`px-3 py-1 rounded-full text-sm ${
-            darkMode ? "bg-violet-900 text-violet-200" : "bg-violet-100 text-violet-800"
-          }`}>
-            Courtly Staff
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center space-x-6">
+            <Link href="/" className="text-lg font-light">Courtly</Link>
+            <span className={`text-sm font-light ${darkMode ? 'text-gray-600' : 'text-gray-400'}`}>/</span>
+            <h1 className="text-sm font-light">Manage Clubs</h1>
+          </div>
+          
+          <div className="flex items-center space-x-4">
+            <Link 
+              href="/dashboard" 
+              className={`text-sm font-light transition-colors duration-200 ${
+                darkMode ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-black'
+              }`}
+            >
+              Dashboard
+            </Link>
+            <button
+              onClick={toggleDarkMode}
+              className={`p-2 transition-colors duration-200 ${
+                darkMode ? "hover:bg-[#1a1a1a]" : "hover:bg-gray-100"
+              }`}
+              aria-label="Toggle dark mode"
+            >
+              {darkMode ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              )}
+            </button>
+            <div className={`px-3 py-1 border text-xs font-light uppercase tracking-wider ${
+              darkMode ? "border-[#1a1a1a]" : "border-gray-200"
+            }`}>
+              Courtly Staff
+            </div>
           </div>
         </div>
       </header>
       
-      <div className="container mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Alert messages */}
         {error && (
-          <div className="mb-6 p-4 rounded-lg bg-red-100 text-red-700 border border-red-200">
-            <div className="flex">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>{error}</span>
-            </div>
+          <div className={`mb-8 p-4 border font-light text-sm ${
+            darkMode 
+              ? 'border-red-900/50 bg-red-950/20 text-red-400' 
+              : 'border-red-200 bg-red-50 text-red-600'
+          }`}>
+            {error}
           </div>
         )}
         
         {success && (
-          <div className="mb-6 p-4 rounded-lg bg-green-100 text-green-700 border border-green-200">
-            <div className="flex">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <span>{success}</span>
-            </div>
+          <div className={`mb-8 p-4 border font-light text-sm ${
+            darkMode 
+              ? 'border-green-900/50 bg-green-950/20 text-green-400' 
+              : 'border-green-200 bg-green-50 text-green-600'
+          }`}>
+            {success}
           </div>
         )}
         
         {/* Add/Edit Club Form */}
-        <div className={`mb-10 p-6 rounded-lg shadow-md ${
-          darkMode ? "bg-gray-800" : "bg-white"
+        <div className={`mb-12 p-8 border ${
+          darkMode ? "border-[#1a1a1a]" : "border-gray-100"
         }`}>
-          <h2 className="text-xl font-semibold mb-6">
+          <h2 className="text-xl font-light mb-8">
             {isEditing ? `Edit Club: ${selectedClub?.name}` : "Add New Club"}
           </h2>
           
@@ -394,7 +583,9 @@ export default function ManageClubsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Club Name */}
               <div>
-                <label htmlFor="name" className="block mb-2 text-sm font-medium">
+                <label htmlFor="name" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
                   Club Name*
                 </label>
                 <input
@@ -404,19 +595,19 @@ export default function ManageClubsPage() {
                   value={formData.name}
                   onChange={handleChange}
                   required
-                  className={`w-full px-4 py-2 rounded-lg ${
+                  className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 border-gray-600 text-white" 
-                      : "bg-white border-gray-300 text-gray-900"
-                  } border focus:outline-none focus:ring-2 ${
-                    darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                  }`}
+                      ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                  } focus:outline-none`}
                 />
               </div>
               
               {/* Email */}
               <div>
-                <label htmlFor="email" className="block mb-2 text-sm font-medium">
+                <label htmlFor="email" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
                   Email*
                 </label>
                 <input
@@ -426,19 +617,19 @@ export default function ManageClubsPage() {
                   value={formData.email}
                   onChange={handleChange}
                   required
-                  className={`w-full px-4 py-2 rounded-lg ${
+                  className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 border-gray-600 text-white" 
-                      : "bg-white border-gray-300 text-gray-900"
-                  } border focus:outline-none focus:ring-2 ${
-                    darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                  }`}
+                      ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                  } focus:outline-none`}
                 />
               </div>
               
               {/* Phone */}
               <div>
-                <label htmlFor="phone" className="block mb-2 text-sm font-medium">
+                <label htmlFor="phone" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
                   Phone
                 </label>
                 <input
@@ -447,19 +638,19 @@ export default function ManageClubsPage() {
                   name="phone"
                   value={formData.phone}
                   onChange={handleChange}
-                  className={`w-full px-4 py-2 rounded-lg ${
+                  className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 border-gray-600 text-white" 
-                      : "bg-white border-gray-300 text-gray-900"
-                  } border focus:outline-none focus:ring-2 ${
-                    darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                  }`}
+                      ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                  } focus:outline-none`}
                 />
               </div>
               
               {/* Website */}
               <div>
-                <label htmlFor="website" className="block mb-2 text-sm font-medium">
+                <label htmlFor="website" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
                   Website
                 </label>
                 <input
@@ -469,19 +660,19 @@ export default function ManageClubsPage() {
                   value={formData.website}
                   onChange={handleChange}
                   placeholder="https://example.com"
-                  className={`w-full px-4 py-2 rounded-lg ${
+                  className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 border-gray-600 text-white" 
-                      : "bg-white border-gray-300 text-gray-900"
-                  } border focus:outline-none focus:ring-2 ${
-                    darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                  }`}
+                      ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                  } focus:outline-none`}
                 />
               </div>
               
               {/* Address */}
               <div>
-                <label htmlFor="address" className="block mb-2 text-sm font-medium">
+                <label htmlFor="address" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
                   Address
                 </label>
                 <input
@@ -490,19 +681,19 @@ export default function ManageClubsPage() {
                   name="address"
                   value={formData.address}
                   onChange={handleChange}
-                  className={`w-full px-4 py-2 rounded-lg ${
+                  className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 border-gray-600 text-white" 
-                      : "bg-white border-gray-300 text-gray-900"
-                  } border focus:outline-none focus:ring-2 ${
-                    darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                  }`}
+                      ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                  } focus:outline-none`}
                 />
               </div>
               
               {/* City */}
               <div>
-                <label htmlFor="city" className="block mb-2 text-sm font-medium">
+                <label htmlFor="city" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
                   City*
                 </label>
                 <input
@@ -512,19 +703,19 @@ export default function ManageClubsPage() {
                   value={formData.city}
                   onChange={handleChange}
                   required
-                  className={`w-full px-4 py-2 rounded-lg ${
+                  className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 border-gray-600 text-white" 
-                      : "bg-white border-gray-300 text-gray-900"
-                  } border focus:outline-none focus:ring-2 ${
-                    darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                  }`}
+                      ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                  } focus:outline-none`}
                 />
               </div>
               
               {/* State */}
               <div>
-                <label htmlFor="state" className="block mb-2 text-sm font-medium">
+                <label htmlFor="state" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
                   State*
                 </label>
                 <select
@@ -533,13 +724,11 @@ export default function ManageClubsPage() {
                   value={formData.state}
                   onChange={handleChange}
                   required
-                  className={`w-full px-4 py-2 rounded-lg ${
+                  className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 border-gray-600 text-white" 
-                      : "bg-white border-gray-300 text-gray-900"
-                  } border focus:outline-none focus:ring-2 ${
-                    darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                  }`}
+                      ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white focus:border-gray-600' 
+                      : 'bg-white border-gray-200 text-gray-900 focus:border-gray-400'
+                  } focus:outline-none`}
                 >
                   <option value="">Select State</option>
                   {states.map((state) => (
@@ -552,7 +741,9 @@ export default function ManageClubsPage() {
               
               {/* ZIP Code */}
               <div>
-                <label htmlFor="zip" className="block mb-2 text-sm font-medium">
+                <label htmlFor="zip" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
                   ZIP Code
                 </label>
                 <input
@@ -561,19 +752,19 @@ export default function ManageClubsPage() {
                   name="zip"
                   value={formData.zip}
                   onChange={handleChange}
-                  className={`w-full px-4 py-2 rounded-lg ${
+                  className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 border-gray-600 text-white" 
-                      : "bg-white border-gray-300 text-gray-900"
-                  } border focus:outline-none focus:ring-2 ${
-                    darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                  }`}
+                      ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                  } focus:outline-none`}
                 />
               </div>
               
               {/* Number of Courts */}
               <div>
-                <label htmlFor="courts" className="block mb-2 text-sm font-medium">
+                <label htmlFor="courts" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
                   Number of Courts
                 </label>
                 <input
@@ -583,19 +774,19 @@ export default function ManageClubsPage() {
                   min="1"
                   value={formData.courts}
                   onChange={handleChange}
-                  className={`w-full px-4 py-2 rounded-lg ${
+                  className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 border-gray-600 text-white" 
-                      : "bg-white border-gray-300 text-gray-900"
-                  } border focus:outline-none focus:ring-2 ${
-                    darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                  }`}
+                      ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                  } focus:outline-none`}
                 />
               </div>
               
               {/* Court Type */}
               <div>
-                <label htmlFor="courtType" className="block mb-2 text-sm font-medium">
+                <label htmlFor="courtType" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
                   Court Surface Type
                 </label>
                 <select
@@ -603,13 +794,11 @@ export default function ManageClubsPage() {
                   name="courtType"
                   value={formData.courtType}
                   onChange={handleChange}
-                  className={`w-full px-4 py-2 rounded-lg ${
+                  className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 border-gray-600 text-white" 
-                      : "bg-white border-gray-300 text-gray-900"
-                  } border focus:outline-none focus:ring-2 ${
-                    darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                  }`}
+                      ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white focus:border-gray-600' 
+                      : 'bg-white border-gray-200 text-gray-900 focus:border-gray-400'
+                  } focus:outline-none`}
                 >
                   <option value="hard">Hard</option>
                   <option value="clay">Clay</option>
@@ -622,7 +811,9 @@ export default function ManageClubsPage() {
             
             {/* Description */}
             <div>
-              <label htmlFor="description" className="block mb-2 text-sm font-medium">
+              <label htmlFor="description" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                darkMode ? 'text-gray-400' : 'text-gray-600'
+              }`}>
                 Description
               </label>
               <textarea
@@ -631,45 +822,97 @@ export default function ManageClubsPage() {
                 rows={4}
                 value={formData.description}
                 onChange={handleChange}
-                className={`w-full px-4 py-2 rounded-lg ${
+                className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                   darkMode 
-                    ? "bg-gray-700 border-gray-600 text-white" 
-                    : "bg-white border-gray-300 text-gray-900"
-                } border focus:outline-none focus:ring-2 ${
-                  darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
-                }`}
+                    ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                } focus:outline-none`}
                 placeholder="Describe the club, facilities, and any other relevant information..."
               ></textarea>
             </div>
             
-            {/* Approved Status */}
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="approved"
-                name="approved"
-                checked={formData.approved}
-                onChange={handleCheckboxChange}
-                className={`w-4 h-4 mr-2 ${
-                  darkMode ? "bg-gray-700 border-gray-600" : "bg-white border-gray-300"
-                }`}
-              />
-              <label htmlFor="approved" className="text-sm font-medium">
-                Approve club (visible in directory)
+            {/* Assigned Admins */}
+            <div>
+              <label className={`block text-xs font-light uppercase tracking-wider mb-3 ${
+                darkMode ? 'text-gray-400' : 'text-gray-600'
+              }`}>
+                Assign Club Admins
               </label>
+              <p className={`text-xs font-light mb-4 ${
+                darkMode ? 'text-gray-500' : 'text-gray-500'
+              }`}>
+                Select users who will have admin access to this club. Selected admins will be added to their organization list.
+              </p>
+              <div className={`border max-h-64 overflow-y-auto ${
+                darkMode ? 'border-[#1a1a1a]' : 'border-gray-200'
+              }`}>
+                {users.length === 0 ? (
+                  <div className="p-6 text-center">
+                    <p className={`text-sm font-light ${
+                      darkMode ? 'text-gray-600' : 'text-gray-400'
+                    }`}>
+                      No users available for admin assignment.
+                    </p>
+                  </div>
+                ) : (
+                  <div className={`divide-y ${
+                    darkMode ? 'divide-[#1a1a1a]' : 'divide-gray-100'
+                  }`}>
+                    {users.map((user) => (
+                      <label
+                        key={user.id}
+                        className={`flex items-center px-4 py-3 cursor-pointer transition-colors duration-200 ${
+                          darkMode ? 'hover:bg-[#0f0f0f]' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedAdmins.includes(user.id)}
+                          onChange={() => toggleAdminSelection(user.id)}
+                          className="mr-3 w-4 h-4"
+                        />
+                        <div className="flex-1">
+                          <div className="font-light text-sm">
+                            {user.firstName} {user.lastName}
+                          </div>
+                          <div className={`text-xs font-light ${
+                            darkMode ? 'text-gray-600' : 'text-gray-400'
+                          }`}>
+                            {user.email}
+                          </div>
+                        </div>
+                        <span className={`px-2 py-1 border text-xs font-light uppercase tracking-wider ${
+                          user.userType === 'courtly'
+                            ? (darkMode ? 'border-purple-900/50 text-purple-400' : 'border-purple-200 text-purple-600')
+                            : (darkMode ? 'border-blue-900/50 text-blue-400' : 'border-blue-200 text-blue-600')
+                        }`}>
+                          {user.userType === 'courtly' ? 'Courtly Admin' : 'Club Admin'}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {selectedAdmins.length > 0 && (
+                <p className={`text-xs font-light mt-2 ${
+                  darkMode ? 'text-gray-500' : 'text-gray-500'
+                }`}>
+                  {selectedAdmins.length} admin{selectedAdmins.length !== 1 ? 's' : ''} selected
+                </p>
+              )}
             </div>
             
             {/* Form Actions */}
-            <div className="flex items-center justify-end space-x-4">
+            <div className="flex items-center justify-end space-x-4 pt-6">
               {isEditing && (
                 <button
                   type="button"
                   onClick={resetForm}
-                  className={`px-4 py-2 rounded-lg ${
+                  className={`px-6 py-3 border font-light text-sm transition-colors duration-200 ${
                     darkMode 
-                      ? "bg-gray-700 text-white hover:bg-gray-600" 
-                      : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                  } transition-colors`}
+                      ? 'border-[#1a1a1a] hover:border-gray-600' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
                 >
                   Cancel
                 </button>
@@ -677,11 +920,11 @@ export default function ManageClubsPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className={`px-4 py-2 rounded-lg ${
-                  darkMode 
-                    ? "bg-teal-600 text-white hover:bg-teal-700" 
-                    : "bg-green-500 text-white hover:bg-green-600"
-                } transition-colors ${submitting ? "opacity-70 cursor-not-allowed" : ""}`}
+                className={`px-6 py-3 font-light text-sm transition-colors duration-200 ${
+                  darkMode
+                    ? submitting ? 'bg-gray-800 text-gray-500' : 'bg-white text-black hover:bg-gray-100'
+                    : submitting ? 'bg-gray-200 text-gray-400' : 'bg-black text-white hover:bg-gray-900'
+                }`}
               >
                 {submitting 
                   ? "Saving..." 
@@ -695,98 +938,158 @@ export default function ManageClubsPage() {
         </div>
         
         {/* Clubs List */}
-        <div className={`rounded-lg shadow-md overflow-hidden ${
-          darkMode ? "bg-gray-800" : "bg-white"
+        <div className={`border ${
+          darkMode ? "border-[#1a1a1a]" : "border-gray-100"
         }`}>
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-            <h2 className="text-xl font-semibold">
+          <div className={`px-6 py-4 border-b flex justify-between items-center ${
+            darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'
+          }`}>
+            <h2 className="text-sm font-light uppercase tracking-wider">
               Clubs Directory ({clubs.length})
+              {fetchingClubs && <span className="ml-2 text-xs">(Loading...)</span>}
             </h2>
             <button 
               onClick={fetchClubs}
-              className={`p-2 rounded-lg ${
+              disabled={fetchingClubs}
+              className={`p-2 transition-colors duration-200 ${
                 darkMode 
-                  ? "bg-gray-700 hover:bg-gray-600" 
-                  : "bg-gray-100 hover:bg-gray-200"
-              }`}
+                  ? "hover:bg-[#1a1a1a]" 
+                  : "hover:bg-gray-100"
+              } ${fetchingClubs ? 'opacity-50 cursor-not-allowed' : ''}`}
+              aria-label="Refresh clubs list"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${fetchingClubs ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
           </div>
           
           {clubs.length === 0 ? (
-            <div className="p-8 text-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className={`h-12 w-12 mx-auto mb-4 ${
-                darkMode ? "text-gray-600" : "text-gray-400"
-              }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-              <p className={darkMode ? "text-gray-400" : "text-gray-600"}>
+            <div className="p-12 text-center">
+              <p className={`font-light ${darkMode ? "text-gray-600" : "text-gray-400"}`}>
                 No clubs added yet. Add your first club using the form above.
               </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className={darkMode ? "bg-gray-700" : "bg-gray-50"}>
+              <table className="min-w-full">
+                <thead className={darkMode ? "bg-[#0a0a0a]" : "bg-white"}>
                   <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                    <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                      darkMode ? 'text-gray-600' : 'text-gray-400'
+                    }`}>
                       Club Name
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                    <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                      darkMode ? 'text-gray-600' : 'text-gray-400'
+                    }`}>
                       Location
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                    <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                      darkMode ? 'text-gray-600' : 'text-gray-400'
+                    }`}>
                       Courts
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                    <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                      darkMode ? 'text-gray-600' : 'text-gray-400'
+                    }`}>
+                      Assigned Admins
+                    </th>
+                    <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                      darkMode ? 'text-gray-600' : 'text-gray-400'
+                    }`}>
                       Status
                     </th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider">
+                    <th scope="col" className={`px-6 py-4 text-right text-xs font-light uppercase tracking-wider ${
+                      darkMode ? 'text-gray-600' : 'text-gray-400'
+                    }`}>
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className={`divide-y ${
-                  darkMode ? "divide-gray-700" : "divide-gray-200"
+                <tbody className={`${
+                  darkMode ? "divide-y divide-[#1a1a1a]" : "divide-y divide-gray-100"
                 }`}>
                   {clubs.map((club) => (
-                    <tr key={club.id} className={darkMode ? "hover:bg-gray-750" : "hover:bg-gray-50"}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="font-medium">{club.name}</div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">{club.email}</div>
+                    <tr key={club.id} className={`transition-colors duration-200 ${
+                      darkMode ? "hover:bg-[#0f0f0f]" : "hover:bg-gray-50"
+                    }`}>
+                      <td className="px-6 py-4">
+                        <div className="font-light">{club.name}</div>
+                        <div className={`text-sm font-light ${
+                          darkMode ? "text-gray-600" : "text-gray-400"
+                        }`}>{club.email}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>{club.city}, {club.state}</div>
-                        {club.zip && <div className="text-sm text-gray-500 dark:text-gray-400">{club.zip}</div>}
+                      <td className="px-6 py-4">
+                        <div className="font-light">{club.city}, {club.state}</div>
+                        {club.zip && <div className={`text-sm font-light ${
+                          darkMode ? "text-gray-600" : "text-gray-400"
+                        }`}>{club.zip}</div>}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {club.courts} {club.courts === 1 ? 'court' : 'courts'}
-                        <div className="text-sm text-gray-500 dark:text-gray-400 capitalize">
+                      <td className="px-6 py-4">
+                        <div className="font-light">{club.courts} {club.courts === 1 ? 'court' : 'courts'}</div>
+                        <div className={`text-sm font-light capitalize ${
+                          darkMode ? "text-gray-600" : "text-gray-400"
+                        }`}>
                           {club.courtType} surface
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                      <td className="px-6 py-4">
+                        {club.assignedAdmins && club.assignedAdmins.length > 0 ? (
+                          <div>
+                            <div className="font-light text-sm">
+                              {club.assignedAdmins.length} admin{club.assignedAdmins.length !== 1 ? 's' : ''}
+                            </div>
+                            <div className={`text-xs font-light ${
+                              darkMode ? "text-gray-600" : "text-gray-400"
+                            }`}>
+                              {users
+                                .filter(u => club.assignedAdmins?.includes(u.id))
+                                .slice(0, 2)
+                                .map(u => `${u.firstName} ${u.lastName}`)
+                                .join(', ')}
+                              {club.assignedAdmins.length > 2 && ` +${club.assignedAdmins.length - 2} more`}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className={`text-sm font-light ${
+                            darkMode ? "text-gray-600" : "text-gray-400"
+                          }`}>
+                            None
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 border text-xs font-light uppercase tracking-wider ${
                           club.approved
-                            ? (darkMode ? "bg-green-800 text-green-200" : "bg-green-100 text-green-800")
-                            : (darkMode ? "bg-yellow-800 text-yellow-200" : "bg-yellow-100 text-yellow-800")
+                            ? (darkMode ? "border-green-900/50 text-green-400" : "border-green-200 text-green-600")
+                            : (darkMode ? "border-yellow-900/50 text-yellow-400" : "border-yellow-200 text-yellow-600")
                         }`}>
                           {club.approved ? "Approved" : "Pending"}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <td className="px-6 py-4 text-right text-sm font-light whitespace-nowrap">
+                        {!club.approved && (
+                          <button
+                            onClick={() => club.id && approveClub(club.id, club.name)}
+                            className={`mr-4 underline hover:no-underline transition-colors duration-200 ${
+                              darkMode ? "text-green-400" : "text-green-600"
+                            }`}
+                          >
+                            Approve
+                          </button>
+                        )}
                         <button
                           onClick={() => editClub(club)}
-                          className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 mr-4"
+                          className="mr-4 underline hover:no-underline transition-colors duration-200"
                         >
                           Edit
                         </button>
                         <button
                           onClick={() => club.id && deleteClub(club.id)}
-                          className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                          className={`underline hover:no-underline transition-colors duration-200 ${
+                            darkMode ? "text-red-400" : "text-red-600"
+                          }`}
                         >
                           Delete
                         </button>
@@ -801,11 +1104,13 @@ export default function ManageClubsPage() {
       </div>
       
       {/* Footer */}
-      <footer className={`mt-12 py-6 ${
-        darkMode ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"
+      <footer className={`border-t py-6 mt-12 transition-colors duration-300 ${
+        darkMode ? 'border-[#1a1a1a] text-gray-600' : 'border-gray-100 text-gray-400'
       }`}>
-        <div className="container mx-auto px-4 text-center">
-          <p>© {new Date().getFullYear()} Courtly by JiaYou Tennis. All rights reserved.</p>
+        <div className="text-center">
+          <p className="text-xs font-light">
+            © {new Date().getFullYear()} Courtly by JiaYou Tennis. All rights reserved.
+          </p>
         </div>
       </footer>
     </div>

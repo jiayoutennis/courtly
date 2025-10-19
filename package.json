@@ -1,28 +1,55 @@
 {
-  "name": "tennis",
+  "name": "courtly",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:e2e": "playwright test",
+    "emulators": "firebase emulators:start",
+    "functions:build": "cd functions && npm run build",
+    "functions:deploy": "cd functions && npm run deploy"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-toast": "^1.2.15",
+    "@stripe/stripe-js": "^2.4.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "firebase": "^11.10.0",
+    "firebase-admin": "^12.0.0",
+    "luxon": "^3.7.2",
     "next": "^15.4.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "stripe": "^14.25.0",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@playwright/test": "^1.41.2",
     "@tailwindcss/postcss": "^4",
+    "@types/jest": "^29.5.11",
+    "@types/luxon": "^3.4.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.3.0",
+    "firebase-tools": "^13.35.1",
+    "jest": "^29.7.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

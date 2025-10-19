@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth, db } from '../../../../firebase';
 import { 
-  collection, doc, getDoc, getDocs, query, where, orderBy, 
-  updateDoc, Timestamp, serverTimestamp, addDoc
+  collection, doc, getDoc, getDocs, query, where, 
+  updateDoc, deleteDoc, Timestamp, serverTimestamp, addDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth'; // Import from firebase/auth instead
 import Image from 'next/image';
@@ -120,12 +120,23 @@ export default function MemberRequestsPage() {
             // Get club details if user is a club admin
             if (userData.userType === 'admin' && userData.organization) {
               try {
-                // Try to get club name from the organization reference
-                const clubDoc = await getDoc(doc(db, "publicClubs", userData.organization));
+                // Support both string and array organization format
+                const orgId = Array.isArray(userData.organization) 
+                  ? userData.organization[0] 
+                  : userData.organization;
+                
+                // Try to get club name from orgs collection first
+                let clubDoc = await getDoc(doc(db, "orgs", orgId));
                 if (clubDoc.exists()) {
                   setClubName(clubDoc.data().name || "Your Club");
                 } else {
-                  setClubName("Your Club");
+                  // Fallback to publicClubs if not found in orgs
+                  clubDoc = await getDoc(doc(db, "publicClubs", orgId));
+                  if (clubDoc.exists()) {
+                    setClubName(clubDoc.data().name || "Your Club");
+                  } else {
+                    setClubName("Your Club");
+                  }
                 }
               } catch (err) {
                 console.error("Error fetching club details:", err);
@@ -137,7 +148,16 @@ export default function MemberRequestsPage() {
             }
             
             // Fetch member requests - pass organization ID for club admins
-            fetchMemberRequests(currentUser.uid, userData.organization);
+            const orgId = Array.isArray(userData.organization) 
+              ? userData.organization[0] 
+              : userData.organization;
+            console.log("Admin user data:", {
+              userType: userData.userType,
+              organization: userData.organization,
+              orgId: orgId,
+              uid: currentUser.uid
+            });
+            fetchMemberRequests(currentUser.uid, orgId, userData.userType);
           } else {
             // User is not a club admin
             setIsAuthorized(false);
@@ -163,21 +183,24 @@ export default function MemberRequestsPage() {
   }, [router]);
 
   // Fetch member requests for this admin's club
-  const fetchMemberRequests = async (adminId: string, organizationId?: string) => {
+  const fetchMemberRequests = async (adminId: string, organizationId?: string, userType?: string) => {
     try {
       setLoading(true);
       console.log("Fetching requests for admin:", adminId);
+      console.log("Organization ID:", organizationId);
+      console.log("User Type:", userType);
       
       // If user is a courtly admin, they can see all requests
-      if (user?.userType === 'courtly') {
+      if (userType === 'courtly') {
         const requestsQuery = query(
-          collection(db, "clubJoinRequests"),
-          orderBy("createdAt", "desc")
+          collection(db, "clubJoinRequests")
         );
         
         const querySnapshot = await getDocs(requestsQuery);
         const requests: MemberRequest[] = [];
         const userIds: string[] = [];
+        
+        console.log("Courtly admin - Query snapshot size:", querySnapshot.size);
         
         querySnapshot.forEach((doc) => {
           const data = doc.data();
@@ -200,6 +223,13 @@ export default function MemberRequestsPage() {
           }
         });
         
+        // Sort by createdAt in JavaScript (newest first)
+        requests.sort((a, b) => {
+          const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt || 0);
+          const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt || 0);
+          return dateB.getTime() - dateA.getTime();
+        });
+        
         setMemberRequests(requests);
         
         // Filter by default to show pending requests
@@ -212,13 +242,16 @@ export default function MemberRequestsPage() {
         // Regular club admin - only sees requests for their club
         const requestsQuery = query(
           collection(db, "clubJoinRequests"),
-          where("clubId", "==", organizationId),
-          orderBy("createdAt", "desc")
+          where("clubId", "==", organizationId)
         );
+        
+        console.log("Club admin - Querying for clubId:", organizationId);
         
         const querySnapshot = await getDocs(requestsQuery);
         const requests: MemberRequest[] = [];
         const userIds: string[] = [];
+        
+        console.log("Club admin - Query snapshot size:", querySnapshot.size);
         
         querySnapshot.forEach((doc) => {
           const data = doc.data();
@@ -239,6 +272,13 @@ export default function MemberRequestsPage() {
           if (data.userId) {
             userIds.push(data.userId);
           }
+        });
+        
+        // Sort by createdAt in JavaScript (newest first)
+        requests.sort((a, b) => {
+          const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt || 0);
+          const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt || 0);
+          return dateB.getTime() - dateA.getTime();
         });
         
         setMemberRequests(requests);
@@ -257,7 +297,8 @@ export default function MemberRequestsPage() {
       
     } catch (error) {
       console.error("Error fetching member requests:", error);
-      setError("Failed to load membership requests. Please try again later.");
+      console.error("Error details:", JSON.stringify(error, null, 2));
+      setError("Failed to load membership requests. Please check console for details.");
     } finally {
       setLoading(false);
     }
@@ -308,16 +349,13 @@ export default function MemberRequestsPage() {
       }
       
       console.log("Updating request status...");
-      // Step 2: Update request status
+      // Step 2: Delete the request instead of updating status
       try {
-        await updateDoc(doc(db, "clubJoinRequests", request.id), {
-          status: "approved",
-          updatedAt: serverTimestamp()
-        });
-        console.log("Request status updated successfully");
+        await deleteDoc(doc(db, "clubJoinRequests", request.id));
+        console.log("Request deleted successfully");
       } catch (error) {
-        console.error("Error updating request status:", error);
-        setError("Failed to update request status. You may not have permission.");
+        console.error("Error deleting request:", error);
+        setError("Failed to delete request. You may not have permission.");
         setLoading(false);
         return;
       }
@@ -325,8 +363,24 @@ export default function MemberRequestsPage() {
       console.log("Updating user organization...");
       // Step 3: Update user's organization field
       try {
+        const userData = userDocSnap.data();
+        const currentOrg = userData.organization || [];
+        
+        // Ensure organization is an array and add clubId if not already present
+        let updatedOrg: string[];
+        if (Array.isArray(currentOrg)) {
+          updatedOrg = currentOrg.includes(request.clubId) ? currentOrg : [...currentOrg, request.clubId];
+        } else if (typeof currentOrg === 'string') {
+          // Convert string to array
+          updatedOrg = currentOrg === request.clubId ? [currentOrg] : [currentOrg, request.clubId];
+        } else {
+          updatedOrg = [request.clubId];
+        }
+        
+        console.log("Updating organization to:", updatedOrg);
+        
         await updateDoc(userDocRef, {
-          organization: request.clubId,
+          organization: updatedOrg,
           updatedAt: serverTimestamp()
         });
         console.log("User organization updated successfully");
@@ -414,23 +468,11 @@ export default function MemberRequestsPage() {
     setLoading(true);
     
     try {
-      // Update request status
-      await updateDoc(doc(db, "clubJoinRequests", request.id), {
-        status: "rejected",
-        updatedAt: serverTimestamp()
-      });
+      // Delete request instead of updating status
+      await deleteDoc(doc(db, "clubJoinRequests", request.id));
       
-      // Update local state with proper type assertion
-      const updatedRequests = memberRequests.map(req => {
-        if (req.id === request.id) {
-          return { 
-            ...req, 
-            status: "rejected" as const, // Type assertion
-            updatedAt: new Date() 
-          };
-        }
-        return req;
-      });
+      // Remove from local state
+      const updatedRequests = memberRequests.filter(req => req.id !== request.id);
       
       setMemberRequests(updatedRequests);
       applyFilters(updatedRequests);
@@ -537,25 +579,15 @@ export default function MemberRequestsPage() {
         selectedRequests.includes(req.id) && req.status === 'pending'
       );
       
-      // Process each request
+      // Delete each request
       for (const request of requestsToReject) {
-        await updateDoc(doc(db, "clubJoinRequests", request.id), {
-          status: "rejected",
-          updatedAt: serverTimestamp()
-        });
+        await deleteDoc(doc(db, "clubJoinRequests", request.id));
       }
       
-      // Update local state
-      const updatedRequests = memberRequests.map(req => {
-        if (selectedRequests.includes(req.id) && req.status === 'pending') {
-          return { 
-            ...req, 
-            status: "rejected" as const,
-            updatedAt: new Date() 
-          };
-        }
-        return req;
-      });
+      // Remove from local state
+      const updatedRequests = memberRequests.filter(req => 
+        !selectedRequests.includes(req.id)
+      );
       
       setMemberRequests(updatedRequests);
       applyFilters(updatedRequests);
@@ -1044,7 +1076,7 @@ export default function MemberRequestsPage() {
                         <div className="flex-shrink-0 h-10 w-10">
                           {userProfiles[request.userId]?.photoURL ? (
                             <Image
-                              src={userProfiles[request.userId].photoURL || ''}
+                              src={userProfiles[request.userId]?.photoURL || ''}
                               alt={request.userName}
                               width={40}
                               height={40}

@@ -1,0 +1,330 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===== Helper Functions =====
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Get user's UID
+    function getUserId() {
+      return request.auth.uid;
+    }
+    
+    // Get user's orgId from custom claims
+    function getUserOrgId() {
+      return request.auth.token.orgId;
+    }
+    
+    // Get user's role from custom claims
+    function getUserRole() {
+      return request.auth.token.role;
+    }
+    
+    // Get all user's org memberships
+    function getUserOrgs() {
+      return request.auth.token.orgs != null ? request.auth.token.orgs : [];
+    }
+    
+    // Read user's Firestore profile (if exists)
+    function hasUserDoc() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function getUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    // Doc-based org membership: supports legacy 'organization' array of orgIds
+    function isMemberByDoc(orgId) {
+      return isAuthenticated() && hasUserDoc() &&
+             getUserDoc().keys().hasAny(['organization']) &&
+             (orgId in getUserDoc().organization || getUserDoc().organization == orgId);
+    }
+    
+    // Doc-based staff (club admin) check
+    function isStaffByDoc(orgId) {
+      return isAuthenticated() && hasUserDoc() &&
+             getUserDoc().userType == 'admin' &&
+             getUserDoc().keys().hasAny(['organization']) &&
+             (orgId in getUserDoc().organization || getUserDoc().organization == orgId);
+    }
+    
+    // Check if user belongs to the org
+    function belongsToOrg(orgId) {
+      return isAuthenticated() && (
+        getUserOrgId() == orgId ||
+        orgId in getUserOrgs() ||
+        isMemberByDoc(orgId)
+      );
+    }
+    
+    // Check if user has specific role in org
+    function hasRole(orgId, role) {
+      return belongsToOrg(orgId) && (
+        getUserRole() == role ||
+        // minimal doc-based role support: treat 'admin' as staff
+        (role in ['owner','manager','frontdesk'] && isStaffByDoc(orgId))
+      );
+    }
+    
+    // Check if user has any of the specified roles (staff roles)
+    function hasAnyRole(orgId, roles) {
+      return belongsToOrg(orgId) && (
+        getUserRole() in roles || isStaffByDoc(orgId)
+      );
+    }
+    
+    // Check if user is staff (owner, manager, or frontdesk)
+    function isStaff(orgId) {
+      return hasAnyRole(orgId, ['owner', 'manager', 'frontdesk']);
+    }
+    
+    // Check if user is member of the club
+    function isMember(orgId) {
+      return belongsToOrg(orgId);
+    }
+    
+    // Check if user is coach of the club (from coaches subcollection)
+    function isCoach(orgId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/orgs/$(orgId)/coaches/$(request.auth.uid));
+    }
+    
+    // Check if user can book courts (members, admins, coaches, or Courtly admins)
+    function canBookCourts(orgId) {
+      return isAuthenticated() && (
+        isMember(orgId) || 
+        isStaff(orgId) || 
+        isCoach(orgId) ||
+        isCourtlyAdminAny()
+      );
+    }
+    
+    // Check if user is Courtly super admin (checks custom claims)
+    function isCourtlyAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.courtlyAdmin == true;
+    }
+    
+    // Check if user is Courtly super admin (checks Firestore document)
+    function isCourtlyAdminByDoc() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'courtly';
+    }
+    
+    // Combined check: Courtly admin via claims OR document
+    function isCourtlyAdminAny() {
+      return isCourtlyAdmin() || isCourtlyAdminByDoc();
+    }
+    
+    // ===== Users Collection =====
+    
+    match /users/{userId} {
+      // Users can read their own document
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Users can create their own document when signing up
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Users can update their own document (excluding sensitive fields)
+      allow update: if isAuthenticated() && 
+                       request.auth.uid == userId &&
+                       !request.resource.data.diff(resource.data).affectedKeys()
+                         .hasAny(['uid', 'organizations', 'authProvider', 'createdBy', 'schemaVersion']);
+      
+      // Club admins can read user documents (needed to check before approval)
+      allow read: if isAuthenticated() &&
+                     hasUserDoc() &&
+                     getUserDoc().userType == 'admin';
+      
+      // Club admins can update organization field of users (for membership approvals)
+      // Only allowed to add their club to the user's organization array
+      allow update: if isAuthenticated() &&
+                       hasUserDoc() &&
+                       getUserDoc().userType == 'admin' &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['organization', 'updatedAt']) &&
+                       request.resource.data.organization is list;
+      
+      // Courtly admins can read and write all users
+      allow read, write: if isCourtlyAdmin();
+    }
+    
+    // ===== Orgs Collection (Club Root) =====
+    
+    match /orgs/{orgId} {
+      // Members can read their org
+  allow read: if isAuthenticated();
+      
+      // Only staff can update org settings
+      allow update: if isStaff(orgId) || isCourtlyAdmin();
+      
+      // Only Courtly admins can create or delete orgs
+      allow create, delete: if isCourtlyAdmin();
+      
+      // ===== Courts Subcollection =====
+      
+      match /courts/{courtId} {
+        // Members can read courts in their org
+        allow read: if isMember(orgId) || isCourtlyAdmin();
+        
+        // Only staff can manage courts (or Courtly admins)
+        allow write: if isStaff(orgId) || isCourtlyAdmin();
+      }
+      
+      // ===== Bookings Subcollection =====
+      
+      match /bookings/{bookingId} {
+        // Members can read all bookings in their org (for conflict checking)
+        allow read: if isMember(orgId) || isCourtlyAdmin();
+        
+        // Members CANNOT directly write bookings
+        // All booking creation/updates must go through Cloud Functions
+        // Functions will use admin SDK to bypass these rules
+        allow write: if false;
+        
+        // Exception: Staff can manage all bookings (and Courtly admins)
+        allow write: if isStaff(orgId) || isCourtlyAdmin();
+      }
+      
+      // ===== Blocks Subcollection (Maintenance/Closures) =====
+      
+      match /blocks/{blockId} {
+        // Members can read blocks to see unavailable times
+        allow read: if isMember(orgId) || isCourtlyAdmin();
+        
+        // Only staff can create/manage blocks (or Courtly admins)
+        allow write: if isStaff(orgId) || isCourtlyAdmin();
+      }
+      
+      // ===== Audit Log Subcollection =====
+      
+      match /audit/{logId} {
+        // Only staff can read audit logs (and Courtly admins)
+        allow read: if isStaff(orgId) || isCourtlyAdmin();
+        
+        // Audit logs are write-only via Cloud Functions (or Courtly admins)
+        allow write: if isCourtlyAdmin();
+      }
+    }
+    
+    // ===== Legacy publicClubs Collection (for backward compatibility) =====
+    // TODO: Migrate all data from publicClubs to orgs and remove this section
+    
+    match /publicClubs/{clubId} {
+      // Allow reading club data
+      allow read: if isAuthenticated();
+      
+      // Only Courtly admins can write
+      allow write: if isCourtlyAdmin();
+      
+      // Check if user is a member of the club
+      function isClubMember(clubId) {
+        let userData = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+        // Support both new array format and legacy string format
+        return (userData.keys().hasAll(['organization']) && userData.organization == clubId) ||
+               (userData.keys().hasAll(['organizations']) && 
+                userData.organizations.hasAny([{orgId: clubId}]));
+      }
+      
+      // Subcollections
+      match /courts/{courtId} {
+        allow read: if isAuthenticated();
+        allow write: if isCourtlyAdmin();
+      }
+      
+      match /members/{memberId} {
+        allow read: if isAuthenticated();
+        allow write: if isCourtlyAdmin();
+      }
+      
+      match /courtSchedule/{scheduleId} {
+        allow read: if isAuthenticated();
+        allow write: if isCourtlyAdmin();
+      }
+      
+      match /bookings/{bookingId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && 
+                         request.resource.data.keys().hasAll(['clubId']) &&
+                         canBookCourts(request.resource.data.clubId);
+        allow update, delete: if isAuthenticated() && 
+                                 (isCourtlyAdminAny() || 
+                                  resource.data.userId == request.auth.uid ||
+                                  canBookCourts(resource.data.clubId));
+      }
+      
+      match /lessonRequests/{requestId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && 
+                         request.resource.data.keys().hasAll(['clubId']) &&
+                         canBookCourts(request.resource.data.clubId);
+        allow update, delete: if isAuthenticated() && 
+                                 (isCourtlyAdminAny() || 
+                                  resource.data.userId == request.auth.uid ||
+                                  canBookCourts(resource.data.clubId));
+      }
+      
+      match /payments/{paymentId} {
+        allow read: if isAuthenticated() && 
+                       (isCourtlyAdmin() || 
+                        resource.data.userId == request.auth.uid);
+        allow write: if isCourtlyAdmin();
+      }
+    }
+    
+    // ===== Club Requests Collection =====
+    
+    match /clubRequests/{requestId} {
+      // Anyone can create a club request
+      allow create: if isAuthenticated();
+      
+      // Users can read their own requests
+      allow read: if isAuthenticated() && 
+                     resource.data.createdBy == request.auth.uid;
+      
+      // Only Courtly admins can read all requests and update/delete
+      allow read, update, delete: if isCourtlyAdmin();
+    }
+    
+    // ===== Club Join Requests collection
+    match /clubJoinRequests/{requestId} {
+      // Any authenticated user can create a join request
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      // Users can read their own requests
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Club admins can read/update/delete requests for THEIR club only
+      // Check multiple ways to handle different data formats
+      allow read, update, delete: if isAuthenticated() && hasUserDoc() &&
+        getUserDoc().userType == 'admin' &&
+        (getUserDoc().organization == resource.data.clubId ||
+         (getUserDoc().organization is list && resource.data.clubId in getUserDoc().organization));
+      // Courtly admins can read/update/delete ALL requests
+      allow read, update, delete: if isCourtlyAdminAny();
+    }
+    
+    // ===== Club Submissions Collection =====
+    
+    match /clubSubmissions/{submissionId} {
+      // Any authenticated user can create a club submission
+      allow create: if isAuthenticated();
+      
+      // Users can read their own submissions
+      allow read: if isAuthenticated() && 
+                     resource.data.submittedBy == request.auth.uid;
+      
+      // Only Courtly admins can read all submissions and update/delete
+      allow read, update, delete: if isCourtlyAdminAny();
+    }
+    
+    // ===== Catch-All: Courtly Admins Full Access =====
+    // Courtly admins have full read/write access across the database
+    match /{document=**} {
+      allow read, write: if isCourtlyAdminAny();
+    }
+  }
+}

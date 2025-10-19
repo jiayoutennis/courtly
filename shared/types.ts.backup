@@ -1,0 +1,514 @@
+/**
+ * Core TypeScript types for Courtly
+ * All entities are multi-tenant (scoped by orgId)
+ * Schema follows exact specification from requirements
+ */
+
+import { Timestamp } from 'firebase/firestore';
+
+// ===== Enums & Constants =====
+
+export type Role = 'owner' | 'manager' | 'frontdesk' | 'coach' | 'member' | 'guest';
+
+export type BookingStatus = 
+  | 'pending_payment'
+  | 'confirmed'
+  | 'canceled'
+  | 'refunded';
+
+export type BookingSource = 'web' | 'admin' | 'api';
+
+export type CourtSurface = 'hard' | 'clay' | 'grass' | 'carpet' | 'other';
+
+export type PricingModel = 'hourly' | 'fixed' | 'tiered' | 'free';
+
+export type AuditAction = 
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'approve'
+  | 'cancel'
+  | 'refund'
+  | 'policy_change';
+
+// ===== Helper Types =====
+
+export interface GeoLocation {
+  lat: number;
+  lng: number;
+}
+
+export interface HoursOfOperation {
+  mon?: { open: string; close: string }; // HH:mm format
+  tue?: { open: string; close: string };
+  wed?: { open: string; close: string };
+  thu?: { open: string; close: string };
+  fri?: { open: string; close: string };
+  sat?: { open: string; close: string };
+  sun?: { open: string; close: string };
+}
+
+export interface OrgPolicies {
+  bookingWindowDays: number; // REQUIRED: how far in advance members can reserve
+  publicBookingWindowDays?: number;
+  bufferMinutes: number;
+  maxAdvanceDays?: number; // alias for bookingWindowDays
+  maxBookingsPerMemberPerDay: number;
+  cancelPolicy: string;
+  allowGuestBookings: boolean;
+}
+
+export interface PaymentSettings {
+  stripeAccountId: string;
+  payoutEnabled: boolean;
+}
+
+export interface SocialLinks {
+  facebook?: string;
+  instagram?: string;
+  twitter?: string;
+  linkedin?: string;
+}
+
+export interface StaffMember {
+  userId: string;
+  role: string;
+}
+
+export interface MaintenanceWindow {
+  start: Timestamp;
+  end: Timestamp;
+  reason: string;
+}
+
+export interface CourtPolicyOverrides {
+  bookingWindowDays?: number;
+  bufferMinutes?: number;
+  bookingIntervals?: number;
+  sunsetCutoffOverride?: string; // HH:mm format
+}
+
+// ===== Core Entities =====
+
+/**
+ * Org (Club) document
+ * Path: /orgs/{orgId}
+ */
+export interface Org {
+  orgId: string;
+  name: string;
+  shortName: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  createdBy: string;
+  
+  // Address fields
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postalCode: string;
+  geoLocation: GeoLocation;
+  
+  // Settings
+  timezone: string; // IANA timezone (e.g., "America/Los_Angeles")
+  currency: string; // e.g., "USD"
+  
+  // Contact
+  email: string;
+  phone: string;
+  website: string;
+  
+  // Branding
+  logoURL: string;
+  bannerURL: string;
+  description: string;
+  
+  // Policies (source of truth)
+  policies: OrgPolicies;
+  
+  // Hours of operation
+  hours: HoursOfOperation;
+  
+  // Court facilities
+  courtCount: number;
+  courtsWithLights: number;
+  indoorCourts: number;
+  outdoorCourts: number;
+  hasLights: boolean;
+  sunsetCutoffDefault: string; // HH:mm format (e.g., "20:30")
+  
+  // Booking settings
+  bookingIntervals: number; // minutes
+  
+  // Pricing
+  pricingModel: PricingModel;
+  memberPricePerHour: number;
+  guestPricePerHour: number;
+  currencySymbol: string;
+  
+  // Payment
+  paymentSettings: PaymentSettings;
+  stripeAccountId: string;
+  
+  // Staff
+  staff: StaffMember[];
+  
+  // Status
+  isActive: boolean;
+  isVerified: boolean;
+  
+  // Metadata
+  tags: string[];
+  socialLinks: SocialLinks;
+  schemaVersion: number;
+}
+
+/**
+ * Court document
+ * Path: /orgs/{orgId}/courts/{courtId}
+ */
+export interface Court {
+  courtId: string;
+  name: string;
+  number: number;
+  surface: string;
+  indoor: boolean;
+  hasLights: boolean;
+  
+  // Optional overrides
+  openHours?: HoursOfOperation;
+  maintenanceWindows: MaintenanceWindow[];
+  features: string[];
+  notes: string;
+  policyOverrides?: CourtPolicyOverrides;
+  
+  // Status
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/**
+ * Booking document (schedule entries)
+ * Path: /orgs/{orgId}/bookings/{bookingId}
+ */
+export interface Booking {
+  bookingId: string;
+  courtId: string;
+  start: Timestamp; // UTC
+  end: Timestamp; // UTC
+  
+  // User identification (member OR guest)
+  memberId?: string;
+  guestEmail?: string;
+  
+  // Pricing
+  price: number; // minor units (cents)
+  currency: string;
+  
+  // Status
+  status: BookingStatus; // pending_payment|confirmed|canceled|refunded
+  
+  // Optional associations
+  coachId?: string;
+  programId?: string;
+  
+  // Policy snapshot (copy of key policies at booking time)
+  policySnapshot: Record<string, any>;
+  
+  // Metadata
+  createdBy: string; // uid
+  createdAt: Timestamp;
+  notes: string;
+  source: BookingSource; // web|admin|api
+  paymentId?: string;
+}
+
+/**
+ * Block document (unavailable time - maintenance/closures)
+ * Path: /orgs/{orgId}/blocks/{blockId}
+ */
+export interface Block {
+  blockId: string;
+  courtIds: string[]; // Multiple courts can be blocked simultaneously
+  start: Timestamp;
+  end: Timestamp;
+  reason: string;
+  createdBy: string;
+  createdAt: Timestamp;
+}
+
+/**
+ * Audit Log entry
+ * Path: /orgs/{orgId}/audit/{logId}
+ */
+export interface AuditLog {
+  logId: string;
+  action: AuditAction;
+  entityType: string; // 'org' | 'court' | 'booking' | 'block'
+  entityId: string;
+  userId: string;
+  changes?: Record<string, { before: any; after: any }>;
+  timestamp: Timestamp;
+  metadata?: Record<string, any>;
+}
+
+export interface Coach {
+  id: string;
+  orgId: string;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  bio?: string;
+  skills: string[];
+  certifications: {
+    name: string;
+    issuedBy: string;
+    issuedDate: Timestamp;
+    expiryDate?: Timestamp;
+  }[];
+  payRate: {
+    hourlyRate: number;
+    currency: string;
+  };
+  availabilityRules: {
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+  }[];
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Member {
+  id: string;
+  orgId: string;
+  userId?: string; // Optional for guest bookings
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  tier: MemberTier;
+  status: MemberStatus;
+  stripeCustomerId?: string;
+  emergencyContact?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
+  joinedAt: Timestamp;
+  lastActivityAt?: Timestamp;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface RuleSet {
+  id: string;
+  orgId: string;
+  name: string;
+  bookingWindowDays: number; // How far in advance members can book
+  minBufferMinutes: number; // Gap between bookings on same court
+  maxAdvanceDays: number; // Maximum days in advance to book
+  cancelPolicy: {
+    hoursBeforeStart: number;
+    refundPercentage: number;
+  };
+  sunsetCutoffOverride?: string; // HH:mm format, overrides calculated sunset
+  lightsFeeMultiplier?: number; // Extra charge for lights usage
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Program {
+  id: string;
+  orgId: string;
+  name: string;
+  description?: string;
+  type: ProgramType;
+  recurrence: RecurrencePattern;
+  startDate: Timestamp;
+  endDate?: Timestamp;
+  capacity: number;
+  currentEnrollment: number;
+  price: {
+    amount: number;
+    currency: string;
+  };
+  coachIds: string[];
+  courtPool: string[]; // Court IDs available for this program
+  schedule: {
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+  }[];
+  waitlistEnabled: boolean;
+  waitlistStrategy: WaitlistStrategy;
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Block {
+  id: string;
+  orgId: string;
+  courtIds: string[];
+  start: Timestamp;
+  end: Timestamp;
+  reason: string;
+  isRecurring: boolean;
+  recurrencePattern?: RecurrencePattern;
+  createdBy: string; // userId
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Booking {
+  id: string;
+  orgId: string;
+  courtId: string;
+  start: Timestamp;
+  end: Timestamp;
+  memberId?: string; // Member ID
+  guestEmail?: string; // For non-member bookings
+  guestName?: string;
+  price: {
+    amount: number;
+    currency: string;
+  };
+  status: BookingStatus;
+  coachId?: string; // Optional coach assignment
+  programId?: string; // Link to program if part of one
+  notes?: string;
+  createdBy: string; // userId
+  confirmedAt?: Timestamp;
+  canceledAt?: Timestamp;
+  cancellationReason?: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Payment {
+  id: string;
+  orgId: string;
+  stripePaymentIntentId: string;
+  stripeCheckoutSessionId?: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  type: PaymentType;
+  bookingId?: string;
+  programId?: string;
+  memberId?: string;
+  refundedAmount?: number;
+  refundReason?: string;
+  metadata: Record<string, string>;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Waitlist {
+  id: string;
+  orgId: string;
+  programId: string;
+  memberId: string;
+  position: number;
+  notifiedAt?: Timestamp;
+  checkoutLinkExpiry?: Timestamp;
+  promotedAt?: Timestamp;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface AuditLog {
+  id: string;
+  orgId: string;
+  actor: string; // userId or 'system'
+  action: AuditAction;
+  target: string; // Entity ID
+  targetType: string; // Entity type (booking, court, etc.)
+  diff?: Record<string, { before: unknown; after: unknown }>;
+  metadata?: Record<string, unknown>;
+  timestamp: Timestamp;
+}
+
+// ===== User & Auth =====
+
+export interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  photoUrl?: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface UserOrgRole {
+  userId: string;
+  orgId: string;
+  role: Role;
+  assignedAt: Timestamp;
+  assignedBy: string; // userId
+}
+
+export interface CustomClaims {
+  orgId?: string; // Current active org
+  role?: Role; // Role in current org
+  orgs?: { [orgId: string]: Role }; // All org memberships
+}
+
+// ===== API Inputs/Outputs =====
+
+export interface CreateBookingInput {
+  orgId: string;
+  courtId: string;
+  start: Date;
+  end: Date;
+  memberId?: string;
+  guestEmail?: string;
+  guestName?: string;
+  coachId?: string;
+  notes?: string;
+}
+
+export interface CreateBookingOutput {
+  bookingId: string;
+  checkoutUrl?: string; // Stripe checkout URL
+  expiresAt: Date;
+}
+
+export interface ConfirmBookingInput {
+  bookingId: string;
+  paymentIntentId: string;
+}
+
+// ===== Computed/Derived Types =====
+
+export interface UtilizationMetrics {
+  orgId: string;
+  date: string; // YYYY-MM-DD
+  totalSlots: number;
+  bookedSlots: number;
+  blockedSlots: number;
+  utilizationPercent: number;
+  revenue: number;
+  noShowCount: number;
+}
+
+export interface CoachAvailabilityHeatmap {
+  coachId: string;
+  weekData: {
+    date: string; // YYYY-MM-DD
+    dayOfWeek: number;
+    slots: {
+      startTime: string;
+      endTime: string;
+      available: boolean;
+      bookingId?: string;
+    }[];
+  }[];
+}

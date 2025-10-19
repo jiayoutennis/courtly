@@ -1,0 +1,1850 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { auth, db } from "../../../../../firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { 
+  doc, getDoc, updateDoc, collection,
+  getDocs, serverTimestamp, addDoc, deleteDoc
+} from "firebase/firestore";
+import DarkModeToggle from "@/app/components/DarkModeToggle";
+import PageTitle from "@/app/components/PageTitle";
+
+// Define types
+interface Court {
+  id: string;
+  name: string;
+  courtNumber: number;
+  courtType: string;
+  isActive: boolean;
+  openTime: string; // Format: "HH:MM" (24-hour)
+  closeTime: string; // Format: "HH:MM" (24-hour)
+}
+
+interface ClubSettings {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  zip?: string;
+  phone?: string;
+  website?: string;
+  email?: string;
+  description?: string;
+  reservationSettings: {
+    minDuration: number; // in minutes
+    maxDuration: number; // in minutes
+    incrementMinutes: number; // Time slot increments (15, 30, 60 mins)
+    maxDaysInAdvance: number; // How many days ahead can bookings be made
+    startTime: string; // Format: "HH:MM" (24-hour)
+    endTime: string; // Format: "HH:MM" (24-hour)
+    allowedDaysOfWeek: number[]; // 0 = Sunday, 6 = Saturday
+  };
+}
+
+export default function ManageClubPage() {
+  const params = useParams();
+  const router = useRouter();
+  const clubIdFromUrl = params.clubId as string;
+  
+  const [darkMode, setDarkMode] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [clubId, setClubId] = useState<string>("");
+  const [clubSettings, setClubSettings] = useState<ClubSettings | null>(null);
+  const [courts, setCourts] = useState<Court[]>([]);
+  const [isEditingClub, setIsEditingClub] = useState(false);
+  const [isAddingCourt, setIsAddingCourt] = useState(false);
+  const [editingCourtId, setEditingCourtId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [userClubs, setUserClubs] = useState<{[key: string]: string}>({}); // Map of clubId -> clubName
+  
+  // New court form data
+  const [newCourt, setNewCourt] = useState<Omit<Court, 'id'>>({
+    name: "",
+    courtNumber: 1,
+    courtType: "Hard",
+    isActive: true,
+    openTime: "08:00",
+    closeTime: "20:00"
+  });
+
+  // Court types for dropdown
+  const courtTypes = ["Hard", "Clay", "Grass", "Carpet", "Indoor"];
+
+  // Initialize dark mode from localStorage
+  useEffect(() => {
+    const savedMode = localStorage.getItem("darkMode");
+    if (savedMode === "true") {
+      setDarkMode(true);
+    }
+  }, []);
+
+  // Authentication and authorization check
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (!currentUser) {
+        router.push('/signin');
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        
+        console.log("Club ID from URL:", clubIdFromUrl);
+        
+        // Check if user is a club admin
+        const userDocRef = doc(db, "users", currentUser.uid);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          console.log("User data:", userData);
+          console.log("User organizations:", userData.organization);
+          
+          // Check if user is an admin and has access to this club
+          if (userData.userType === 'admin' && 
+              userData.organization && 
+              Array.isArray(userData.organization) && 
+              userData.organization.includes(clubIdFromUrl)) {
+            // User is authorized for this specific club
+            setIsAuthorized(true);
+            setUser({
+              ...currentUser,
+              ...userData
+            });
+            
+            console.log("User set with organizations:", userData.organization);
+            console.log("Number of organizations:", userData.organization?.length);
+            
+            // Use the club ID from the URL
+            setClubId(clubIdFromUrl);
+            
+            // Fetch all club names for the dropdown
+            if (userData.organization.length > 1) {
+              await fetchUserClubNames(userData.organization);
+            }
+            
+            // Fetch club data
+            await fetchClubData(clubIdFromUrl);
+            await fetchCourtData(clubIdFromUrl);
+            
+          } else {
+            // User is not an admin or doesn't have access to this club
+            console.log("Authorization failed - userType:", userData.userType, "has access:", userData.organization?.includes(clubIdFromUrl));
+            setIsAuthorized(false);
+            setError("You don't have permission to access this club's settings");
+            router.push('/dashboard');
+          }
+        } else {
+          router.push('/signin');
+        }
+      } catch (err) {
+        console.error("Error checking authorization:", err);
+        setError("Failed to verify permissions. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [router, clubIdFromUrl]);
+  
+  // Fetch names of all clubs the user has access to
+  const fetchUserClubNames = async (clubIds: string[]) => {
+    try {
+      const clubNames: {[key: string]: string} = {};
+      
+      // Fetch each club's name
+      for (const orgId of clubIds) {
+        const clubRef = doc(db, "orgs", orgId);
+        const clubDoc = await getDoc(clubRef);
+        
+        if (clubDoc.exists()) {
+          const data = clubDoc.data();
+          clubNames[orgId] = data.name || `Club ${orgId}`;
+        } else {
+          clubNames[orgId] = `Club ${orgId}`;
+        }
+      }
+      
+      setUserClubs(clubNames);
+    } catch (error) {
+      console.error("Error fetching club names:", error);
+    }
+  };
+  
+  // Fetch club data
+  const fetchClubData = async (clubId: string) => {
+    try {
+      console.log("Fetching club data for ID:", clubId);
+      const clubRef = doc(db, "orgs", clubId);
+      const clubDoc = await getDoc(clubRef);
+      
+      console.log("Club document exists:", clubDoc.exists());
+      
+      if (clubDoc.exists()) {
+        const data = clubDoc.data();
+        console.log("Club data:", data);
+        
+        // Create default reservation settings if they don't exist
+        const reservationSettings = data.reservationSettings || {
+          minDuration: 60,
+          maxDuration: 120,
+          incrementMinutes: 30,
+          maxDaysInAdvance: 7,
+          startTime: "08:00",
+          endTime: "20:00",
+          allowedDaysOfWeek: [0, 1, 2, 3, 4, 5, 6] // All days
+        };
+        
+        setClubSettings({
+          id: clubId,
+          name: data.name || "Unknown Club",
+          address: data.address || "",
+          city: data.city || "",
+          state: data.state || "",
+          zip: data.postalCode || "",
+          phone: data.phone || "",
+          website: data.website || "",
+          email: data.email || "",
+          description: data.description || "",
+          reservationSettings
+        });
+        
+        // Clear any previous errors
+        setError("");
+      } else {
+        console.error("Club document not found for ID:", clubId);
+        setError(`Club not found in database (ID: ${clubId})`);
+      }
+    } catch (error) {
+      console.error("Error fetching club data:", error);
+      setError(`Failed to load club information: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+  
+  // Fetch court data
+  const fetchCourtData = async (clubId: string) => {
+    try {
+      // Use subcollection path instead of where clause
+      const courtsQuery = collection(db, `orgs/${clubId}/courts`);
+      const querySnapshot = await getDocs(courtsQuery);
+      
+      const courtsData: Court[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        courtsData.push({
+          id: doc.id,
+          name: data.name || `Court ${data.number}`,
+          courtNumber: data.number || 1,
+          courtType: data.surface || "Hard",
+          isActive: data.isActive !== false,
+          openTime: data.openTime || "08:00",
+          closeTime: data.closeTime || "20:00"
+        });
+      });
+      
+      setCourts(courtsData.sort((a, b) => a.courtNumber - b.courtNumber));
+    } catch (error) {
+      console.error("Error fetching court data:", error);
+      setError("Failed to load court information");
+    }
+  };
+  
+  // Update club settings (only editable fields)
+  const updateClubSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clubSettings) return;
+    
+    try {
+      setLoading(true);
+      setError("");
+      
+      // Update only editable fields (phone, website, email, description, reservationSettings)
+      // Location fields (name, address, city, state, zip) are restricted - contact Courtly admin to change
+      await updateDoc(doc(db, "orgs", clubId), {
+        phone: clubSettings.phone,
+        website: clubSettings.website,
+        email: clubSettings.email,
+        description: clubSettings.description,
+        reservationSettings: clubSettings.reservationSettings,
+        updatedAt: serverTimestamp()
+      });
+      
+      setSuccess("Club settings updated successfully");
+      setIsEditingClub(false);
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess("");
+      }, 3000);
+    } catch (error) {
+      console.error("Error updating club settings:", error);
+      setError("Failed to update club settings");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Add new court
+  const addNewCourt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      setLoading(true);
+      setError("");
+      
+      // Check for duplicate court number
+      if (courts.some(court => court.courtNumber === newCourt.courtNumber)) {
+        setError(`Court number ${newCourt.courtNumber} already exists`);
+        setLoading(false);
+        return;
+      }
+      
+      // Use subcollection path for adding courts
+      const courtRef = await addDoc(collection(db, `orgs/${clubId}/courts`), {
+        courtId: `court-${newCourt.courtNumber}`,
+        name: newCourt.name,
+        number: newCourt.courtNumber,
+        surface: newCourt.courtType,
+        indoor: false,
+        hasLights: false,
+        isActive: newCourt.isActive,
+        features: [],
+        notes: '',
+        maintenanceWindows: [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      
+      // Add the new court to the local state
+      setCourts([
+        ...courts, 
+        { 
+          id: courtRef.id,
+          ...newCourt 
+        }
+      ].sort((a, b) => a.courtNumber - b.courtNumber));
+      
+      setSuccess("Court added successfully");
+      setIsAddingCourt(false);
+      
+      // Reset new court form
+      setNewCourt({
+        name: "",
+        courtNumber: courts.length > 0 ? Math.max(...courts.map(c => c.courtNumber)) + 1 : 1,
+        courtType: "Hard",
+        isActive: true,
+        openTime: "08:00",
+        closeTime: "20:00"
+      });
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess("");
+      }, 3000);
+    } catch (error) {
+      console.error("Error adding court:", error);
+      setError("Failed to add court");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Update court
+  const updateCourt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCourtId) return;
+    
+    try {
+      setLoading(true);
+      setError("");
+      
+      const courtToUpdate = courts.find(court => court.id === editingCourtId);
+      if (!courtToUpdate) {
+        setError("Court not found");
+        return;
+      }
+      
+      // Check for duplicate court number with other courts
+      if (courts.some(court => 
+        court.id !== editingCourtId && 
+        court.courtNumber === courtToUpdate.courtNumber
+      )) {
+        setError(`Court number ${courtToUpdate.courtNumber} already exists`);
+        setLoading(false);
+        return;
+      }
+      
+      // Use subcollection path for updating courts
+      await updateDoc(doc(db, `orgs/${clubId}/courts`, editingCourtId), {
+        name: courtToUpdate.name,
+        number: courtToUpdate.courtNumber,
+        surface: courtToUpdate.courtType,
+        isActive: courtToUpdate.isActive,
+        updatedAt: serverTimestamp()
+      });
+      
+      setSuccess("Court updated successfully");
+      setEditingCourtId(null);
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess("");
+      }, 3000);
+    } catch (error) {
+      console.error("Error updating court:", error);
+      setError("Failed to update court");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Delete court
+  const deleteCourt = async (courtId: string) => {
+    if (!confirm("Are you sure you want to delete this court? All reservations for this court will also be deleted.")) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError("");
+      
+      // Use subcollection path for deleting courts
+      await deleteDoc(doc(db, `orgs/${clubId}/courts`, courtId));
+      
+      // Update local state
+      setCourts(courts.filter(court => court.id !== courtId));
+      
+      setSuccess("Court deleted successfully");
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess("");
+      }, 3000);
+    } catch (error) {
+      console.error("Error deleting court:", error);
+      setError("Failed to delete court");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Handle court form changes
+  const handleCourtChange = (courtId: string, field: keyof Court, value: string | number | boolean) => {
+    setCourts(courts.map(court => {
+      if (court.id === courtId) {
+        return { ...court, [field]: value };
+      }
+      return court;
+    }));
+  };
+  
+  // Handle new court form changes
+  const handleNewCourtChange = (field: keyof Omit<Court, 'id'>, value: string | number | boolean) => {
+    setNewCourt({ ...newCourt, [field]: value });
+  };
+  
+  // Handle club settings changes
+  const handleClubSettingChange = (field: keyof ClubSettings, value: any) => {
+    if (!clubSettings) return;
+    
+    setClubSettings({
+      ...clubSettings,
+      [field]: value
+    });
+  };
+  
+  // Handle reservation settings changes
+  const handleReservationSettingChange = (field: keyof ClubSettings['reservationSettings'], value: any) => {
+    if (!clubSettings) return;
+    
+    setClubSettings({
+      ...clubSettings,
+      reservationSettings: {
+        ...clubSettings.reservationSettings,
+        [field]: value
+      }
+    });
+  };
+  
+  // Day of week selection
+  const toggleDayOfWeek = (day: number) => {
+    if (!clubSettings) return;
+    
+    const currentDays = [...clubSettings.reservationSettings.allowedDaysOfWeek];
+    
+    if (currentDays.includes(day)) {
+      // Remove the day
+      const newDays = currentDays.filter(d => d !== day);
+      handleReservationSettingChange('allowedDaysOfWeek', newDays);
+    } else {
+      // Add the day
+      const newDays = [...currentDays, day].sort();
+      handleReservationSettingChange('allowedDaysOfWeek', newDays);
+    }
+  };
+  
+  // Format time options for select inputs
+  const generateTimeOptions = () => {
+    const options = [];
+    
+    for (let hour = 0; hour < 24; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        const formattedHour = hour.toString().padStart(2, '0');
+        const formattedMinute = minute.toString().padStart(2, '0');
+        const time = `${formattedHour}:${formattedMinute}`;
+        options.push(time);
+      }
+    }
+    
+    return options;
+  };
+  
+  // Helper to safely format time with AM/PM
+  const formatTimeWithAMPM = (time: string) => {
+    const parts = time.split(':');
+    const hour = parseInt(parts[0] || '0');
+    const minute = parts[1] || '00';
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    return `${displayHour.toString().padStart(2, '0')}:${minute} ${ampm}`;
+  };
+  
+  // Day names for allowed days of week
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  
+  if (loading) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 ${
+        darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"
+      }`}>
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="mt-4">Loading club settings...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  if (!isAuthorized) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 ${
+        darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"
+      }`}>
+        <div className="text-center p-8">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <h1 className="text-2xl font-bold mt-4">Access Denied</h1>
+          <p className="mt-2">You don&apos;t have permission to access club settings.</p>
+          <Link href="/dashboard" className={`mt-6 inline-block px-4 py-2 rounded-lg ${
+            darkMode ? "bg-teal-600 hover:bg-teal-700 text-white" : "bg-green-500 hover:bg-green-600 text-white"
+          } transition-colors`}>
+            Return to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div className={`min-h-screen transition-colors duration-300 ${
+      darkMode ? "bg-[#0a0a0a] text-white" : "bg-white text-gray-900"
+    }`}>
+      <PageTitle title="Club Settings - Courtly" />
+      
+      {/* Header with breadcrumb navigation */}
+      <div className={`border-b transition-colors duration-300 ${
+        darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+      }`}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center gap-2 text-sm font-light">
+              <Link href="/dashboard" className={`hover:underline ${
+                darkMode ? "text-gray-400" : "text-gray-600"
+              }`}>
+                Courtly
+              </Link>
+              <span className={darkMode ? "text-gray-600" : "text-gray-300"}>/</span>
+              <span className={darkMode ? "text-white" : "text-gray-900"}>
+                {clubSettings?.name || "Club Settings"}
+              </span>
+              <span className={darkMode ? "text-gray-600" : "text-gray-300"}>/</span>
+              <span className={darkMode ? "text-white" : "text-gray-900"}>Settings</span>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              {/* Club Switcher Dropdown */}
+              {user && user.organization && Array.isArray(user.organization) && user.organization.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <label className={`text-xs uppercase tracking-wider font-light ${
+                    darkMode ? "text-gray-400" : "text-gray-600"
+                  }`}>
+                    Switch Club:
+                  </label>
+                  <select
+                    value={clubIdFromUrl}
+                    onChange={(e) => {
+                      const newClubId = e.target.value;
+                      // Navigate to the new club's settings page
+                      router.push(`/club/${newClubId}/club-settings`);
+                    }}
+                    className={`px-4 py-2 text-sm font-light border transition-colors duration-300 focus:outline-none ${
+                      darkMode 
+                        ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                        : "bg-white border-gray-100 text-gray-900"
+                    }`}
+                  >
+                    {user.organization.map((orgId: string) => (
+                      <option key={orgId} value={orgId}>
+                        {userClubs[orgId] || clubSettings?.name || `Club ${orgId.substring(0, 8)}...`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        
+        {/* Alerts */}
+        {error && (
+          <div className={`mb-8 px-4 py-3 border font-light ${
+            darkMode 
+              ? "bg-red-950/20 border-red-900/50 text-red-200" 
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}>
+            {error}
+          </div>
+        )}
+        
+        {success && (
+          <div className={`mb-8 px-4 py-3 border font-light ${
+            darkMode 
+              ? "bg-green-950/20 border-green-900/50 text-green-200" 
+              : "bg-green-50 border-green-200 text-green-800"
+          }`}>
+            {success}
+          </div>
+        )}
+        
+        {/* Info Alert about restrictions */}
+        <div className={`mb-8 px-4 py-3 border font-light ${
+          darkMode 
+            ? "bg-blue-950/20 border-blue-900/50 text-blue-200" 
+            : "bg-blue-50 border-blue-200 text-blue-800"
+        }`}>
+          <p className="text-sm">
+            To change your club name or location information, please contact Courtly Admin at{" "}
+            <a href="mailto:admin@courtly.com" className="underline hover:no-underline">
+              admin@courtly.com
+            </a>
+          </p>
+        </div>
+        
+        {/* Club Details Section */}
+        <div className={`p-6 mb-8 border font-light ${
+          darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+        }`}>
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-light uppercase tracking-wider text-xs">Club Details</h2>
+            {isEditingClub ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setIsEditingClub(false);
+                    // Reset club settings by re-fetching
+                    fetchClubData(clubId);
+                  }}
+                  className={`px-4 py-3 border text-sm font-light transition-colors ${
+                    darkMode 
+                      ? "border-[#1a1a1a] hover:bg-[#1a1a1a] text-white" 
+                      : "border-gray-100 hover:bg-gray-50 text-gray-900"
+                  }`}
+                  disabled={loading}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={updateClubSettings}
+                  className={`px-4 py-3 text-sm font-light transition-colors ${
+                    darkMode 
+                      ? "bg-white text-black hover:bg-gray-200" 
+                      : "bg-black text-white hover:bg-gray-800"
+                  }`}
+                  disabled={loading}
+                >
+                  {loading ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsEditingClub(true)}
+                className={`px-4 py-3 text-sm font-light transition-colors ${
+                  darkMode 
+                    ? "bg-white text-black hover:bg-gray-200" 
+                    : "bg-black text-white hover:bg-gray-800"
+                }`}
+              >
+                Edit Details
+              </button>
+            )}
+          </div>
+          
+          {clubSettings && (
+            <div className={isEditingClub ? "block" : "hidden"}>
+              <form onSubmit={updateClubSettings} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Club Name - Read Only */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Club Name (Contact Admin to Change)
+                    </label>
+                    <input
+                      type="text"
+                      value={clubSettings.name}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none cursor-not-allowed ${
+                        darkMode 
+                          ? "bg-[#0a0a0a]/50 border-[#1a1a1a] text-gray-500" 
+                          : "bg-gray-50 border-gray-100 text-gray-500"
+                      }`}
+                      disabled
+                      readOnly
+                    />
+                  </div>
+                  
+                  {/* Email */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={clubSettings.email || ""}
+                      onChange={(e) => handleClubSettingChange('email', e.target.value)}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    />
+                  </div>
+                  
+                  {/* Phone */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Phone
+                    </label>
+                    <input
+                      type="tel"
+                      value={clubSettings.phone || ""}
+                      onChange={(e) => handleClubSettingChange('phone', e.target.value)}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    />
+                  </div>
+                  
+                  {/* Website */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Website
+                    </label>
+                    <input
+                      type="url"
+                      value={clubSettings.website || ""}
+                      onChange={(e) => handleClubSettingChange('website', e.target.value)}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    />
+                  </div>
+                  
+                  {/* Address - Read Only */}
+                  <div className="md:col-span-2">
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Address (Contact Admin to Change)
+                    </label>
+                    <input
+                      type="text"
+                      value={clubSettings.address || ""}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none cursor-not-allowed ${
+                        darkMode 
+                          ? "bg-[#0a0a0a]/50 border-[#1a1a1a] text-gray-500" 
+                          : "bg-gray-50 border-gray-100 text-gray-500"
+                      }`}
+                      disabled
+                      readOnly
+                    />
+                  </div>
+                  
+                  {/* City - Read Only */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      City (Contact Admin to Change)
+                    </label>
+                    <input
+                      type="text"
+                      value={clubSettings.city || ""}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none cursor-not-allowed ${
+                        darkMode 
+                          ? "bg-[#0a0a0a]/50 border-[#1a1a1a] text-gray-500" 
+                          : "bg-gray-50 border-gray-100 text-gray-500"
+                      }`}
+                      disabled
+                      readOnly
+                    />
+                  </div>
+                  
+                  {/* State - Read Only */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                        darkMode ? "text-gray-400" : "text-gray-600"
+                      }`}>
+                        State (Contact Admin to Change)
+                      </label>
+                      <input
+                        type="text"
+                        value={clubSettings.state || ""}
+                        className={`w-full px-4 py-3 border font-light focus:outline-none cursor-not-allowed ${
+                          darkMode 
+                            ? "bg-[#0a0a0a]/50 border-[#1a1a1a] text-gray-500" 
+                            : "bg-gray-50 border-gray-100 text-gray-500"
+                        }`}
+                        disabled
+                        readOnly
+                      />
+                    </div>
+                    
+                    {/* ZIP - Read Only */}
+                    <div>
+                      <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                        darkMode ? "text-gray-400" : "text-gray-600"
+                      }`}>
+                        ZIP Code (Contact Admin to Change)
+                      </label>
+                      <input
+                        type="text"
+                        value={clubSettings.zip || ""}
+                        className={`w-full px-4 py-3 border font-light focus:outline-none cursor-not-allowed ${
+                          darkMode 
+                            ? "bg-[#0a0a0a]/50 border-[#1a1a1a] text-gray-500" 
+                            : "bg-gray-50 border-gray-100 text-gray-500"
+                        }`}
+                        disabled
+                        readOnly
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Description */}
+                  <div className="md:col-span-2">
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Description
+                    </label>
+                    <textarea
+                      value={clubSettings.description || ""}
+                      onChange={(e) => handleClubSettingChange('description', e.target.value)}
+                      rows={4}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    />
+                  </div>
+                </div>
+              </form>
+            </div>
+          )}
+          
+          {/* Display Club Info when not editing */}
+          {clubSettings && !isEditingClub && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-light">
+              <div>
+                <h3 className={`text-lg font-light ${
+                  darkMode ? "text-white" : "text-gray-900"
+                }`}>
+                  {clubSettings.name}
+                </h3>
+                <p className={`mt-1 text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  {[
+                    clubSettings.address,
+                    clubSettings.city,
+                    clubSettings.state,
+                    clubSettings.zip
+                  ].filter(Boolean).join(", ")}
+                </p>
+              </div>
+              
+              <div className="text-sm">
+                {clubSettings.phone && (
+                  <p className={`${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                    <span className="font-light">Phone:</span> {clubSettings.phone}
+                  </p>
+                )}
+                {clubSettings.email && (
+                  <p className={`${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                    <span className="font-light">Email:</span> {clubSettings.email}
+                  </p>
+                )}
+                {clubSettings.website && (
+                  <p className={`${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                    <span className="font-light">Website:</span> {clubSettings.website}
+                  </p>
+                )}
+              </div>
+              
+              {clubSettings.description && (
+                <div className="md:col-span-2 mt-4">
+                  <h4 className={`text-xs uppercase tracking-wider mb-2 font-light ${
+                    darkMode ? "text-gray-400" : "text-gray-600"
+                  }`}>
+                    Description
+                  </h4>
+                  <p className={`text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                    {clubSettings.description}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Reservation Settings Section */}
+        <div className={`p-6 mb-8 border font-light ${
+          darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+        }`}>
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-light uppercase tracking-wider text-xs">Reservation Settings</h2>
+            {isEditingClub ? (
+              <button
+                onClick={updateClubSettings}
+                className={`px-4 py-3 text-sm font-light transition-colors ${
+                  darkMode 
+                    ? "bg-white text-black hover:bg-gray-200" 
+                    : "bg-black text-white hover:bg-gray-800"
+                }`}
+                disabled={loading}
+              >
+                {loading ? "Saving..." : "Save Settings"}
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsEditingClub(true)}
+                className={`px-4 py-3 text-sm font-light transition-colors ${
+                  darkMode 
+                    ? "bg-white text-black hover:bg-gray-200" 
+                    : "bg-black text-white hover:bg-gray-800"
+                }`}
+              >
+                Edit Settings
+              </button>
+            )}
+          </div>
+          
+          {clubSettings && (
+            <div className={isEditingClub ? "block" : "hidden"}>
+              <form className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {/* Default Open Hours */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Default Opening Time
+                    </label>
+                    <select
+                      value={clubSettings.reservationSettings.startTime}
+                      onChange={(e) => handleReservationSettingChange('startTime', e.target.value)}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    >
+                      {generateTimeOptions().map(time => (
+                        <option key={time} value={time}>
+                          {formatTimeWithAMPM(time)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Default Close Hours */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Default Closing Time
+                    </label>
+                    <select
+                      value={clubSettings.reservationSettings.endTime}
+                      onChange={(e) => handleReservationSettingChange('endTime', e.target.value)}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    >
+                      {generateTimeOptions().map(time => (
+                        <option key={time} value={time}>
+                          {formatTimeWithAMPM(time)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Days of week */}
+                  <div className="md:col-span-2 lg:col-span-3">
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Days Open for Bookings
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {dayNames.map((day, index) => (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => toggleDayOfWeek(index)}
+                          className={`px-3 py-1 border text-xs uppercase tracking-wider font-light transition-colors ${
+                            clubSettings.reservationSettings.allowedDaysOfWeek.includes(index)
+                              ? darkMode
+                                ? "bg-white text-black border-white"
+                                : "bg-black text-white border-black"
+                              : darkMode
+                                ? "border-[#1a1a1a] text-gray-400 hover:border-gray-600"
+                                : "border-gray-100 text-gray-600 hover:border-gray-300"
+                          }`}
+                        >
+                          {day}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {/* Minimum Duration */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Minimum Booking Duration (minutes)
+                    </label>
+                    <select
+                      value={clubSettings.reservationSettings.minDuration}
+                      onChange={(e) => handleReservationSettingChange('minDuration', parseInt(e.target.value))}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    >
+                      <option value="30">30 minutes</option>
+                      <option value="60">60 minutes</option>
+                      <option value="90">90 minutes</option>
+                      <option value="120">120 minutes</option>
+                    </select>
+                  </div>
+                  
+                  {/* Maximum Duration */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Maximum Booking Duration (minutes)
+                    </label>
+                    <select
+                      value={clubSettings.reservationSettings.maxDuration}
+                      onChange={(e) => handleReservationSettingChange('maxDuration', parseInt(e.target.value))}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    >
+                      <option value="60">60 minutes</option>
+                      <option value="90">90 minutes</option>
+                      <option value="120">120 minutes</option>
+                      <option value="180">180 minutes</option>
+                      <option value="240">240 minutes</option>
+                    </select>
+                  </div>
+                  
+                  {/* Time Increment */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Time Slot Increments
+                    </label>
+                    <select
+                      value={clubSettings.reservationSettings.incrementMinutes}
+                      onChange={(e) => handleReservationSettingChange('incrementMinutes', parseInt(e.target.value))}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    >
+                      <option value="15">15 minutes</option>
+                      <option value="30">30 minutes</option>
+                      <option value="60">60 minutes</option>
+                    </select>
+                  </div>
+                  
+                  {/* Max Days in Advance */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Maximum Days in Advance
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={clubSettings.reservationSettings.maxDaysInAdvance}
+                      onChange={(e) => handleReservationSettingChange('maxDaysInAdvance', parseInt(e.target.value))}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    />
+                    <p className={`text-xs mt-1 font-light ${
+                      darkMode ? "text-gray-500" : "text-gray-400"
+                    }`}>
+                      How many days ahead members can book courts
+                    </p>
+                  </div>
+                </div>
+              </form>
+            </div>
+          )}
+          
+          {/* Display Reservation Settings when not editing */}
+          {clubSettings && !isEditingClub && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm font-light">
+              <div>
+                <p className={`${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  <span className="font-light">Operating Hours:</span> {
+                    formatTimeWithAMPM(clubSettings.reservationSettings.startTime)
+                  } - {
+                    formatTimeWithAMPM(clubSettings.reservationSettings.endTime)
+                  }
+                </p>
+                
+                <p className={`${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  <span className="font-light">Booking Duration:</span> {
+                    clubSettings.reservationSettings.minDuration
+                  } - {
+                    clubSettings.reservationSettings.maxDuration
+                  } minutes
+                </p>
+                
+                <p className={`${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  <span className="font-light">Time Slot Increments:</span> {
+                    clubSettings.reservationSettings.incrementMinutes
+                  } minutes
+                </p>
+              </div>
+              
+              <div>
+                <p className={`${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  <span className="font-light">Max Booking Window:</span> {
+                    clubSettings.reservationSettings.maxDaysInAdvance
+                  } days in advance
+                </p>
+                
+                <p className={`${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  <span className="font-light">Days Open:</span> {
+                    clubSettings.reservationSettings.allowedDaysOfWeek
+                      .map(day => dayNames[day])
+                      .join(', ')
+                  }
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {/* Courts Section */}
+        <div className={`p-6 mb-8 border font-light ${
+          darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+        }`}>
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-light uppercase tracking-wider text-xs">Tennis Courts</h2>
+            {!isAddingCourt && (
+              <button
+                onClick={() => {
+                  setIsAddingCourt(true);
+                  setNewCourt({
+                    name: "",
+                    courtNumber: courts.length > 0 ? Math.max(...courts.map(c => c.courtNumber)) + 1 : 1,
+                    courtType: "Hard",
+                    isActive: true,
+                    openTime: "08:00",
+                    closeTime: "20:00"
+                  });
+                }}
+                className={`px-4 py-3 text-sm font-light transition-colors ${
+                  darkMode 
+                    ? "bg-white text-black hover:bg-gray-200" 
+                    : "bg-black text-white hover:bg-gray-800"
+                }`}
+              >
+                Add Court
+              </button>
+            )}
+          </div>
+          
+          {/* Add Court Form */}
+          {isAddingCourt && (
+            <div className={`mb-8 p-6 border font-light ${
+              darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+            }`}>
+              <h3 className="text-xs uppercase tracking-wider mb-4 font-light">Add New Court</h3>
+              <form onSubmit={addNewCourt} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Court Name */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Court Name
+                    </label>
+                    <input
+                      type="text"
+                      value={newCourt.name}
+                      onChange={(e) => handleNewCourtChange('name', e.target.value)}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                      placeholder="Court Name (optional)"
+                    />
+                  </div>
+                  
+                  {/* Court Number */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Court Number*
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newCourt.courtNumber}
+                      onChange={(e) => handleNewCourtChange('courtNumber', parseInt(e.target.value))}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                      required
+                    />
+                  </div>
+                  
+                  {/* Court Type */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Court Surface
+                    </label>
+                    <select
+                      value={newCourt.courtType}
+                      onChange={(e) => handleNewCourtChange('courtType', e.target.value)}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    >
+                      {courtTypes.map(type => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Court Status */}
+                  <div className="flex items-center h-full">
+                    <label className="inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newCourt.isActive}
+                        onChange={(e) => handleNewCourtChange('isActive', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className={`relative w-11 h-6 border peer ${
+                        darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+                      } peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full after:content-[''] after:absolute after:top-[1px] after:start-[1px] after:bg-gray-300 after:border after:h-5 after:w-5 after:transition-all ${
+                        darkMode ? "peer-checked:bg-white peer-checked:after:bg-black" : "peer-checked:bg-black peer-checked:after:bg-white"
+                      }`}></div>
+                      <span className={`ms-3 text-xs uppercase tracking-wider font-light ${
+                        darkMode ? "text-gray-400" : "text-gray-600"
+                      }`}>
+                        Active
+                      </span>
+                    </label>
+                  </div>
+                  
+                  {/* Opening Time */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Opening Time
+                    </label>
+                    <select
+                      value={newCourt.openTime}
+                      onChange={(e) => handleNewCourtChange('openTime', e.target.value)}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    >
+                      {generateTimeOptions().map(time => (
+                        <option key={time} value={time}>
+                          {formatTimeWithAMPM(time)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Closing Time */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Closing Time
+                    </label>
+                    <select
+                      value={newCourt.closeTime}
+                      onChange={(e) => handleNewCourtChange('closeTime', e.target.value)}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    >
+                      {generateTimeOptions().map(time => (
+                        <option key={time} value={time}>
+                          {formatTimeWithAMPM(time)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingCourt(false)}
+                    className={`px-4 py-3 border text-sm font-light transition-colors ${
+                      darkMode 
+                        ? "border-[#1a1a1a] hover:bg-[#1a1a1a] text-white" 
+                        : "border-gray-100 hover:bg-gray-50 text-gray-900"
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className={`px-4 py-3 text-sm font-light transition-colors ${
+                      darkMode 
+                        ? "bg-white text-black hover:bg-gray-200" 
+                        : "bg-black text-white hover:bg-gray-800"
+                    }`}
+                  >
+                    {loading ? "Adding..." : "Add Court"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+          
+          {/* List of Courts */}
+          {courts.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className={`w-full border-collapse font-light text-sm ${
+                darkMode ? "text-gray-400" : "text-gray-600"
+              }`}>
+                <thead>
+                  <tr className={`border-b ${
+                    darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+                  }`}>
+                    <th className="p-3 text-left text-xs uppercase tracking-wider font-light">Court</th>
+                    <th className="p-3 text-left text-xs uppercase tracking-wider font-light">Surface</th>
+                    <th className="p-3 text-center text-xs uppercase tracking-wider font-light">Status</th>
+                    <th className="p-3 text-center text-xs uppercase tracking-wider font-light">Hours</th>
+                    <th className="p-3 text-right text-xs uppercase tracking-wider font-light">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {courts.map(court => (
+                    <tr key={court.id} className={`border-b ${
+                      darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+                    }`}>
+                      {/* Court Name & Number */}
+                      <td className="p-3">
+                        {editingCourtId === court.id ? (
+                          <input
+                            type="text"
+                            value={court.name}
+                            onChange={(e) => handleCourtChange(court.id, 'name', e.target.value)}
+                            className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                              darkMode 
+                                ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                                : "bg-white border-gray-100 text-gray-900"
+                            }`}
+                          />
+                        ) : (
+                          <div className="font-light">
+                            <span>Court {court.courtNumber}</span>
+                            {court.name && <span className="ml-1 text-sm opacity-70">({court.name})</span>}
+                          </div>
+                        )}
+                      </td>
+                      
+                      {/* Surface Type */}
+                      <td className="p-3">
+                        {editingCourtId === court.id ? (
+                          <select
+                            value={court.courtType}
+                            onChange={(e) => handleCourtChange(court.id, 'courtType', e.target.value)}
+                            className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                              darkMode 
+                                ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                                : "bg-white border-gray-100 text-gray-900"
+                            }`}
+                          >
+                            {courtTypes.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          court.courtType
+                        )}
+                      </td>
+                      
+                      {/* Status */}
+                      <td className="p-3 text-center">
+                        {editingCourtId === court.id ? (
+                          <label className="inline-flex items-center cursor-pointer justify-center">
+                            <input
+                              type="checkbox"
+                              checked={court.isActive}
+                              onChange={(e) => handleCourtChange(court.id, 'isActive', e.target.checked)}
+                              className="sr-only peer"
+                            />
+                            <div className={`relative w-11 h-6 border peer ${
+                              darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+                            } peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:border after:h-5 after:w-5 after:transition-all ${
+                              court.isActive 
+                                ? darkMode ? "after:bg-white border-white" : "after:bg-black border-black"
+                                : darkMode ? "after:bg-[#0a0a0a] border-[#1a1a1a]" : "after:bg-white border-gray-100"
+                            }`}></div>
+                          </label>
+                        ) : (
+                          <span className={`inline-flex px-2 py-1 border text-xs font-light uppercase tracking-wider ${
+                            court.isActive
+                              ? darkMode 
+                                ? "border-white text-white" 
+                                : "border-black text-black"
+                              : darkMode
+                                ? "border-[#1a1a1a] text-gray-400"
+                                : "border-gray-100 text-gray-500"
+                          }`}>
+                            {court.isActive ? "Active" : "Inactive"}
+                          </span>
+                        )}
+                      </td>
+                      
+                      {/* Hours */}
+                      <td className="p-3 text-center">
+                        {editingCourtId === court.id ? (
+                          <div className="flex items-center space-x-1">
+                            <select
+                              value={court.openTime}
+                              onChange={(e) => handleCourtChange(court.id, 'openTime', e.target.value)}
+                              className={`w-24 px-2 py-2 border font-light focus:outline-none ${
+                                darkMode 
+                                  ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                                  : "bg-white border-gray-100 text-gray-900"
+                              }`}
+                            >
+                              {generateTimeOptions().map(time => (
+                                <option key={time} value={time}>
+                                  {time}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="font-light">to</span>
+                            <select
+                              value={court.closeTime}
+                              onChange={(e) => handleCourtChange(court.id, 'closeTime', e.target.value)}
+                              className={`w-24 px-2 py-2 border font-light focus:outline-none ${
+                                darkMode 
+                                  ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                                  : "bg-white border-gray-100 text-gray-900"
+                              }`}
+                            >
+                              {generateTimeOptions().map(time => (
+                                <option key={time} value={time}>
+                                  {time}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <span className="font-light">
+                            {court.openTime} - {court.closeTime}
+                          </span>
+                        )}
+                      </td>
+                      
+                      {/* Actions */}
+                      <td className="p-3 text-right whitespace-nowrap">
+                        {editingCourtId === court.id ? (
+                          <div className="flex justify-end space-x-2">
+                            <button
+                              onClick={() => {
+                                setEditingCourtId(null);
+                                // Reset court data by re-fetching
+                                fetchCourtData(clubId);
+                              }}
+                              className={`px-4 py-2 border text-sm font-light transition-colors ${
+                                darkMode 
+                                  ? "border-[#1a1a1a] hover:bg-[#1a1a1a] text-white" 
+                                  : "border-gray-100 hover:bg-gray-50 text-gray-900"
+                              }`}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={updateCourt}
+                              className={`px-4 py-2 text-sm font-light transition-colors ${
+                                darkMode 
+                                  ? "bg-white text-black hover:bg-gray-200" 
+                                  : "bg-black text-white hover:bg-gray-800"
+                              }`}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex justify-end space-x-2">
+                            <button
+                              onClick={() => setEditingCourtId(court.id)}
+                              className={`px-4 py-2 border text-sm font-light transition-colors ${
+                                darkMode 
+                                  ? "border-[#1a1a1a] hover:bg-[#1a1a1a] text-white" 
+                                  : "border-gray-100 hover:bg-gray-50 text-gray-900"
+                              }`}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => deleteCourt(court.id)}
+                              className={`px-4 py-2 text-sm font-light transition-colors ${
+                                darkMode 
+                                  ? "bg-white text-black hover:bg-gray-200" 
+                                  : "bg-black text-white hover:bg-gray-800"
+                              }`}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className={`text-center py-8 font-light ${
+              darkMode ? "text-gray-400" : "text-gray-500"
+            }`}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+              </svg>
+              <h3 className="mt-4 text-lg font-light uppercase tracking-wider text-xs">No Courts Added Yet</h3>
+              <p className="mt-2">Add courts to allow members to make reservations.</p>
+              <button
+                onClick={() => {
+                  setIsAddingCourt(true);
+                  setNewCourt({
+                    name: "",
+                    courtNumber: 1,
+                    courtType: "Hard",
+                    isActive: true,
+                    openTime: "08:00",
+                    closeTime: "20:00"
+                  });
+                }}
+                className={`mt-4 px-4 py-3 text-sm font-light transition-colors ${
+                  darkMode 
+                    ? "bg-white text-black hover:bg-gray-200" 
+                    : "bg-black text-white hover:bg-gray-800"
+                }`}
+              >
+                Add Your First Court
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Court Availability Schedule Section */}
+        <div className={`p-6 mb-8 border font-light ${
+          darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+        }`}>
+          <h2 className="text-xl font-light uppercase tracking-wider text-xs mb-6">Court Availability Schedule</h2>
+
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="w-full md:w-1/3">
+              <h3 className={`text-sm font-light uppercase tracking-wider mb-3 ${
+                darkMode ? "text-gray-400" : "text-gray-600"
+              }`}>
+                View Schedule By Day
+              </h3>
+              
+              <div className={`p-4 border font-light ${
+                darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+              }`}>
+                <p className={`mb-4 text-sm ${
+                  darkMode ? "text-gray-400" : "text-gray-600"
+                }`}>
+                  Select a day to view all court availabilities and existing bookings.
+                </p>
+                
+                <Link 
+                  href="/admin/schedule" 
+                  className={`w-full py-3 px-4 flex items-center justify-center text-sm font-light transition-colors ${
+                    darkMode 
+                      ? "bg-white text-black hover:bg-gray-200" 
+                      : "bg-black text-white hover:bg-gray-800"
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                  </svg>
+                  View Court Schedule
+                </Link>
+              </div>
+            </div>
+            
+            <div className="w-full md:w-1/3">
+              <h3 className={`text-sm font-light uppercase tracking-wider mb-3 ${
+                darkMode ? "text-gray-400" : "text-gray-600"
+              }`}>
+                Club Members
+              </h3>
+              
+              <div className={`p-4 border font-light ${
+                darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+              }`}>
+                <p className={`mb-4 text-sm ${
+                  darkMode ? "text-gray-400" : "text-gray-600"
+                }`}>
+                  Manage your club's members and member requests.
+                </p>
+                
+                <Link 
+                  href="/admin/requests" 
+                  className={`w-full py-3 px-4 flex items-center justify-center text-sm font-light transition-colors ${
+                    darkMode 
+                      ? "bg-white text-black hover:bg-gray-200" 
+                      : "bg-black text-white hover:bg-gray-800"
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+                  </svg>
+                  Manage Members
+                </Link>
+              </div>
+            </div>
+            
+            <div className="w-full md:w-1/3">
+              <h3 className={`text-sm font-light uppercase tracking-wider mb-3 ${
+                darkMode ? "text-gray-400" : "text-gray-600"
+              }`}>
+                Reservation Analytics
+              </h3>
+              
+              <div className={`p-4 border font-light ${
+                darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+              }`}>
+                <p className={`mb-4 text-sm ${
+                  darkMode ? "text-gray-400" : "text-gray-600"
+                }`}>
+                  View insights about court usage and popular booking times.
+                </p>
+                
+                <button 
+                  onClick={() => alert("Analytics feature coming soon!")}
+                  className={`w-full py-3 px-4 flex items-center justify-center text-sm font-light transition-colors ${
+                    darkMode 
+                      ? "bg-white text-black hover:bg-gray-200" 
+                      : "bg-black text-white hover:bg-gray-800"
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                  </svg>
+                  View Analytics
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Court Import/Export Section */}
+        <div className={`p-6 border font-light ${
+          darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+        }`}>
+          <h2 className="text-xl font-light uppercase tracking-wider text-xs mb-6">Bulk Court Management</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <h3 className={`text-sm font-light uppercase tracking-wider mb-3 ${
+                darkMode ? "text-gray-400" : "text-gray-600"
+              }`}>
+                Import Courts
+              </h3>
+              
+              <div className={`p-4 border font-light ${
+                darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+              }`}>
+                <p className={`mb-4 text-sm ${
+                  darkMode ? "text-gray-400" : "text-gray-600"
+                }`}>
+                  Import multiple courts at once using a CSV file.
+                </p>
+                
+                <label className={`flex items-center justify-center w-full py-3 px-4 cursor-pointer text-sm font-light transition-colors ${
+                  darkMode 
+                    ? "border border-[#1a1a1a] hover:bg-[#1a1a1a] text-white" 
+                    : "border border-gray-100 hover:bg-gray-50 text-gray-900"
+                }`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Upload CSV
+                  <input type="file" accept=".csv" className="hidden" onChange={() => alert("CSV import feature coming soon!")} />
+                </label>
+                <p className={`mt-2 text-xs font-light ${
+                  darkMode ? "text-gray-400" : "text-gray-500"
+                }`}>
+                  CSV Format: Court Number, Name, Type, Open Time, Close Time, Active
+                </p>
+              </div>
+            </div>
+            
+            <div>
+              <h3 className={`text-sm font-light uppercase tracking-wider mb-3 ${
+                darkMode ? "text-gray-400" : "text-gray-600"
+              }`}>
+                Export Courts
+              </h3>
+              
+              <div className={`p-4 border font-light ${
+                darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+              }`}>
+                <p className={`mb-4 text-sm ${
+                  darkMode ? "text-gray-400" : "text-gray-600"
+                }`}>
+                  Export your courts data as a CSV file.
+                </p>
+                
+                <button
+                  onClick={() => {
+                    // Logic for exporting courts to CSV
+                    if (courts.length === 0) {
+                      alert("No courts to export.");
+                      return;
+                    }
+                    
+                    // Create CSV content
+                    const headers = ["Court Number", "Name", "Type", "Open Time", "Close Time", "Active"];
+                    const csvContent = [
+                      headers.join(","),
+                      ...courts.map(court => [
+                        court.courtNumber,
+                        court.name || "",
+                        court.courtType,
+                        court.openTime,
+                        court.closeTime,
+                        court.isActive ? "Yes" : "No"
+                      ].join(","))
+                    ].join("\n");
+                    
+                    // Create download link
+                    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", `${clubSettings?.name.replace(/\s+/g, "-")}-courts.csv`);
+                    link.style.visibility = "hidden";
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className={`w-full py-3 px-4 flex items-center justify-center text-sm font-light transition-colors ${
+                    darkMode 
+                      ? "border border-[#1a1a1a] hover:bg-[#1a1a1a] text-white" 
+                      : "border border-gray-100 hover:bg-gray-50 text-gray-900"
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export Courts to CSV
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

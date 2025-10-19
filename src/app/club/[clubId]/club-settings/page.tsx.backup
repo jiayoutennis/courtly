@@ -6,8 +6,8 @@ import Link from "next/link";
 import { auth, db } from "../../../../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { 
-  doc, getDoc, updateDoc, collection, query, 
-  getDocs, serverTimestamp, addDoc, deleteDoc, where 
+  doc, getDoc, updateDoc, collection,
+  getDocs, serverTimestamp, addDoc, deleteDoc
 } from "firebase/firestore";
 import DarkModeToggle from "@/app/components/DarkModeToggle";
 import PageTitle from "@/app/components/PageTitle";
@@ -142,7 +142,7 @@ export default function ManageClubPage() {
   // Fetch club data
   const fetchClubData = async (clubId: string) => {
     try {
-      const clubRef = doc(db, "publicClubs", clubId);
+      const clubRef = doc(db, "orgs", clubId);
       const clubDoc = await getDoc(clubRef);
       
       if (clubDoc.exists()) {
@@ -165,7 +165,7 @@ export default function ManageClubPage() {
           address: data.address || "",
           city: data.city || "",
           state: data.state || "",
-          zip: data.zip || "",
+          zip: data.postalCode || "",
           phone: data.phone || "",
           website: data.website || "",
           email: data.email || "",
@@ -185,7 +185,7 @@ export default function ManageClubPage() {
   const fetchCourtData = async (clubId: string) => {
     try {
       // Use subcollection path instead of where clause
-      const courtsQuery = collection(db, `publicClubs/${clubId}/courts`);
+      const courtsQuery = collection(db, `orgs/${clubId}/courts`);
       const querySnapshot = await getDocs(courtsQuery);
       
       const courtsData: Court[] = [];
@@ -193,10 +193,10 @@ export default function ManageClubPage() {
         const data = doc.data();
         courtsData.push({
           id: doc.id,
-          name: data.name || `Court ${data.courtNumber}`,
-          courtNumber: data.courtNumber || 1, // Changed from 0 to 1 as minimum
-          courtType: data.courtType || "Hard",
-          isActive: data.isActive !== false, // default to true if not specified
+          name: data.name || `Court ${data.number}`,
+          courtNumber: data.number || 1,
+          courtType: data.surface || "Hard",
+          isActive: data.isActive !== false,
           openTime: data.openTime || "08:00",
           closeTime: data.closeTime || "20:00"
         });
@@ -209,7 +209,7 @@ export default function ManageClubPage() {
     }
   };
   
-  // Update club settings
+  // Update club settings (only editable fields)
   const updateClubSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clubSettings) return;
@@ -218,12 +218,9 @@ export default function ManageClubPage() {
       setLoading(true);
       setError("");
       
-      await updateDoc(doc(db, "publicClubs", clubId), {
-        name: clubSettings.name,
-        address: clubSettings.address,
-        city: clubSettings.city,
-        state: clubSettings.state,
-        zip: clubSettings.zip,
+      // Update only editable fields (phone, website, email, description, reservationSettings)
+      // Location fields (name, address, city, state, zip) are restricted - contact Courtly admin to change
+      await updateDoc(doc(db, "orgs", clubId), {
         phone: clubSettings.phone,
         website: clubSettings.website,
         email: clubSettings.email,
@@ -263,9 +260,19 @@ export default function ManageClubPage() {
       }
       
       // Use subcollection path for adding courts
-      const courtRef = await addDoc(collection(db, `publicClubs/${clubId}/courts`), {
-        ...newCourt,
-        createdAt: serverTimestamp()
+      const courtRef = await addDoc(collection(db, `orgs/${clubId}/courts`), {
+        courtId: `court-${newCourt.courtNumber}`,
+        name: newCourt.name,
+        number: newCourt.courtNumber,
+        surface: newCourt.courtType,
+        indoor: false,
+        hasLights: false,
+        isActive: newCourt.isActive,
+        features: [],
+        notes: '',
+        maintenanceWindows: [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       });
       
       // Add the new court to the local state
@@ -328,13 +335,11 @@ export default function ManageClubPage() {
       }
       
       // Use subcollection path for updating courts
-      await updateDoc(doc(db, `publicClubs/${clubId}/courts`, editingCourtId), {
+      await updateDoc(doc(db, `orgs/${clubId}/courts`, editingCourtId), {
         name: courtToUpdate.name,
-        courtNumber: courtToUpdate.courtNumber,
-        courtType: courtToUpdate.courtType,
+        number: courtToUpdate.courtNumber,
+        surface: courtToUpdate.courtType,
         isActive: courtToUpdate.isActive,
-        openTime: courtToUpdate.openTime,
-        closeTime: courtToUpdate.closeTime,
         updatedAt: serverTimestamp()
       });
       
@@ -364,7 +369,7 @@ export default function ManageClubPage() {
       setError("");
       
       // Use subcollection path for deleting courts
-      await deleteDoc(doc(db, `publicClubs/${clubId}/courts`, courtId));
+      await deleteDoc(doc(db, `orgs/${clubId}/courts`, courtId));
       
       // Update local state
       setCourts(courts.filter(court => court.id !== courtId));
@@ -454,6 +459,16 @@ export default function ManageClubPage() {
     return options;
   };
   
+  // Helper to safely format time with AM/PM
+  const formatTimeWithAMPM = (time: string) => {
+    const parts = time.split(':');
+    const hour = parseInt(parts[0] || '0');
+    const minute = parts[1] || '00';
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    return `${displayHour.toString().padStart(2, '0')}:${minute} ${ampm}`;
+  };
+  
   // Day names for allowed days of week
   const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   
@@ -493,82 +508,100 @@ export default function ManageClubPage() {
   
   return (
     <div className={`min-h-screen transition-colors duration-300 ${
-      darkMode ? "bg-gray-900 text-gray-50" : "bg-gray-50 text-gray-900"
+      darkMode ? "bg-[#0a0a0a] text-white" : "bg-white text-gray-900"
     }`}>
       <PageTitle title="Club Settings - Courtly" />
       
-      {/* Dark Mode Toggle Button */}
-      <div className="absolute top-8 right-8">
-        <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
+      {/* Header with breadcrumb navigation */}
+      <div className={`border-b transition-colors duration-300 ${
+        darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+      }`}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center gap-2 text-sm font-light">
+              <Link href="/dashboard" className={`hover:underline ${
+                darkMode ? "text-gray-400" : "text-gray-600"
+              }`}>
+                Courtly
+              </Link>
+              <span className={darkMode ? "text-gray-600" : "text-gray-300"}>/</span>
+              <span className={darkMode ? "text-white" : "text-gray-900"}>
+                {clubSettings?.name || "Club Settings"}
+              </span>
+              <span className={darkMode ? "text-gray-600" : "text-gray-300"}>/</span>
+              <span className={darkMode ? "text-white" : "text-gray-900"}>Settings</span>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              {/* Club Switcher Dropdown */}
+              {user && user.organization && Array.isArray(user.organization) && user.organization.length > 1 && (
+                <select
+                  value={clubId}
+                  onChange={(e) => {
+                    const newClubId = e.target.value;
+                    setClubId(newClubId);
+                    fetchClubData(newClubId);
+                    fetchCourtData(newClubId);
+                  }}
+                  className={`px-4 py-2 text-sm font-light border transition-colors duration-300 focus:outline-none ${
+                    darkMode 
+                      ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                      : "bg-white border-gray-100 text-gray-900"
+                  }`}
+                >
+                  {user.organization.map((orgId: string, index: number) => (
+                    <option key={orgId} value={orgId}>
+                      {clubSettings && clubId === orgId 
+                        ? clubSettings.name 
+                        : `Club ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+              )}
+              
+              <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
+            </div>
+          </div>
+        </div>
       </div>
       
-      {/* Top Navigation Bar */}
-      <nav className={`py-4 px-6 flex items-center justify-between shadow-md ${
-        darkMode ? "bg-gray-800" : "bg-white"
-      }`}>
-        <div className="flex items-center space-x-4">
-          {/* Back Button */}
-          <Link href="/dashboard" className={`flex items-center px-3 py-1.5 rounded-lg ${
-            darkMode 
-              ? "bg-gray-700 hover:bg-gray-600 text-gray-200" 
-              : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-            } transition-colors mr-2`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            <span className="hidden sm:inline">Dashboard</span>
-          </Link>
-          
-          <div className={`p-2 rounded-full ${darkMode ? "bg-teal-600" : "bg-green-400"}`}>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </div>
-          <h1 className="text-xl font-bold">Club Settings</h1>
-        </div>
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         
-        {/* Club Switcher Dropdown - Added here */}
-        {user && user.organization && Array.isArray(user.organization) && user.organization.length > 1 && (
-          <div className="ml-4">
-            <select
-              value={clubId}
-              onChange={(e) => {
-                const newClubId = e.target.value;
-                setClubId(newClubId);
-                fetchClubData(newClubId);
-                fetchCourtData(newClubId);
-              }}
-              className={`p-1 rounded text-sm ${
-                darkMode 
-                  ? "bg-gray-700 border-gray-600 text-white" 
-                  : "bg-white border-gray-300 text-gray-900"
-              } border`}
-            >
-              {user.organization.map((orgId: string, index: number) => (
-                <option key={orgId} value={orgId}>
-                  {clubSettings && clubId === orgId 
-                    ? clubSettings.name 
-                    : `Club ${index + 1}`}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </nav>
-      
-      <div className="container mx-auto px-4 py-8">
+        {/* Alerts */}
         {error && (
-          <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg">
+          <div className={`mb-8 px-4 py-3 border font-light ${
+            darkMode 
+              ? "bg-red-950/20 border-red-900/50 text-red-200" 
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}>
             {error}
           </div>
         )}
+        
         {success && (
-          <div className="mb-6 p-4 bg-green-100 text-green-700 rounded-lg">
+          <div className={`mb-8 px-4 py-3 border font-light ${
+            darkMode 
+              ? "bg-green-950/20 border-green-900/50 text-green-200" 
+              : "bg-green-50 border-green-200 text-green-800"
+          }`}>
             {success}
           </div>
         )}
+        
+        {/* Info Alert about restrictions */}
+        <div className={`mb-8 px-4 py-3 border font-light ${
+          darkMode 
+            ? "bg-blue-950/20 border-blue-900/50 text-blue-200" 
+            : "bg-blue-50 border-blue-200 text-blue-800"
+        }`}>
+          <p className="text-sm">
+            To change your club name or location information, please contact Courtly Admin at{" "}
+            <a href="mailto:admin@courtly.com" className="underline hover:no-underline">
+              admin@courtly.com
+            </a>
+          </p>
+        </div>
         
         {/* Club Details Section */}
         <div className={`p-6 mb-8 rounded-lg shadow-md ${
@@ -908,7 +941,7 @@ export default function ManageClubPage() {
                     >
                       {generateTimeOptions().map(time => (
                         <option key={time} value={time}>
-                          {time.split(':')[0].padStart(2, '0')}:{time.split(':')[1]} {parseInt(time.split(':')[0]) >= 12 ? 'PM' : 'AM'}
+                          {formatTimeWithAMPM(time)}
                         </option>
                       ))}
                     </select>
@@ -932,7 +965,7 @@ export default function ManageClubPage() {
                     >
                       {generateTimeOptions().map(time => (
                         <option key={time} value={time}>
-                          {time.split(':')[0].padStart(2, '0')}:{time.split(':')[1]} {parseInt(time.split(':')[0]) >= 12 ? 'PM' : 'AM'}
+                          {formatTimeWithAMPM(time)}
                         </option>
                       ))}
                     </select>
@@ -1072,14 +1105,10 @@ export default function ManageClubPage() {
               <div>
                 <p className={`${darkMode ? "text-gray-300" : "text-gray-700"}`}>
                   <span className="font-medium">Operating Hours:</span> {
-                    clubSettings.reservationSettings.startTime.split(':')[0].padStart(2, '0')
-                  }:{
-                    clubSettings.reservationSettings.startTime.split(':')[1]
-                  } AM - {
-                    (parseInt(clubSettings.reservationSettings.endTime.split(':')[0]) % 12) || 12
-                  }:{
-                    clubSettings.reservationSettings.endTime.split(':')[1]
-                  } {parseInt(clubSettings.reservationSettings.endTime.split(':')[0]) >= 12 ? 'PM' : 'AM'}
+                    formatTimeWithAMPM(clubSettings.reservationSettings.startTime)
+                  } - {
+                    formatTimeWithAMPM(clubSettings.reservationSettings.endTime)
+                  }
                 </p>
                 
                 <p className={`${darkMode ? "text-gray-300" : "text-gray-700"}`}>
@@ -1257,7 +1286,7 @@ export default function ManageClubPage() {
                     >
                       {generateTimeOptions().map(time => (
                         <option key={time} value={time}>
-                          {time.split(':')[0].padStart(2, '0')}:{time.split(':')[1]} {parseInt(time.split(':')[0]) >= 12 ? 'PM' : 'AM'}
+                          {formatTimeWithAMPM(time)}
                         </option>
                       ))}
                     </select>
@@ -1281,7 +1310,7 @@ export default function ManageClubPage() {
                     >
                       {generateTimeOptions().map(time => (
                         <option key={time} value={time}>
-                          {time.split(':')[0].padStart(2, '0')}:{time.split(':')[1]} {parseInt(time.split(':')[0]) >= 12 ? 'PM' : 'AM'}
+                          {formatTimeWithAMPM(time)}
                         </option>
                       ))}
                     </select>
@@ -1426,7 +1455,7 @@ export default function ManageClubPage() {
                             >
                               {generateTimeOptions().map(time => (
                                 <option key={time} value={time}>
-                                  {time.split(':')[0].padStart(2, '0')}:{time.split(':')[1]}
+                                  {time}
                                 </option>
                               ))}
                             </select>
@@ -1442,7 +1471,7 @@ export default function ManageClubPage() {
                             >
                               {generateTimeOptions().map(time => (
                                 <option key={time} value={time}>
-                                  {time.split(':')[0].padStart(2, '0')}:{time.split(':')[1]}
+                                  {time}
                                 </option>
                               ))}
                             </select>

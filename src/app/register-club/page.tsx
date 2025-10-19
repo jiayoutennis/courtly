@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "../../../firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import Link from "next/link";
 import PageTitle from "@/app/components/PageTitle";
@@ -11,6 +12,7 @@ import DarkModeToggle from "@/app/components/DarkModeToggle";
 export default function ClubRequestPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [formData, setFormData] = useState({
@@ -28,6 +30,21 @@ export default function ClubRequestPage() {
   });
   
   const router = useRouter();
+  
+  // Check authentication - redirect to sign in if not logged in
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        // User is not signed in, redirect to sign in page
+        router.push('/signin');
+      } else {
+        // User is signed in, allow access
+        setAuthChecking(false);
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [router]);
   
   // Initialize dark mode from localStorage
   useEffect(() => {
@@ -117,82 +134,109 @@ export default function ClubRequestPage() {
     }
   };
   
+  // Show loading state while checking authentication
+  if (authChecking) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 ${
+        darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"
+      }`}>
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="mt-4">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+  
   return (
     <div className={`min-h-screen transition-colors duration-300 ${
-      darkMode ? "bg-gray-900 text-gray-50" : "bg-gray-50 text-gray-900"
+      darkMode ? "bg-[#0a0a0a] text-white" : "bg-white text-gray-900"
     }`}>
-      <PageTitle title="Submit Club Request - Courtly" />
+      <PageTitle title="Register Club - Courtly" />
       
-      {/* Dark Mode Toggle */}
-      <div className="absolute top-8 right-8">
-        <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
-      </div>
-      
-      {/* Top Navigation */}
-      <nav className={`py-4 px-6 flex items-center justify-between shadow-md ${
-        darkMode ? "bg-gray-800" : "bg-white"
+      {/* Header */}
+      <header className={`border-b transition-colors duration-300 ${
+        darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'
       }`}>
-        <div className="flex items-center space-x-4">
-          <Link href="/dashboard" className="flex items-center">
-            <div className={`p-2 rounded-full ${darkMode ? "bg-teal-600" : "bg-green-400"}`}>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
-              </svg>
-            </div>
-            <h1 className="text-xl font-bold ml-2">Courtly</h1>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <Link href="/" className="flex items-center space-x-2">
+            <span className="text-lg font-light">Courtly</span>
           </Link>
+          <div className="flex items-center space-x-4">
+            <Link 
+              href="/dashboard" 
+              className={`text-sm font-light transition-colors duration-200 ${
+                darkMode ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-black'
+              }`}
+            >
+              Back to Dashboard
+            </Link>
+            <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
+          </div>
         </div>
-        
-        <div>
-          <Link href="/dashboard" className={`px-4 py-2 rounded ${
-            darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
-          }`}>
-            Back to Dashboard
-          </Link>
-        </div>
-      </nav>
+      </header>
       
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-3xl mx-auto">
-          {/* Success Message */}
-          {success ? (
-            <div className={`p-8 rounded-lg shadow-md text-center ${
-              darkMode ? "bg-gray-800" : "bg-white"
+      <div className="max-w-3xl mx-auto px-4 py-12">
+        {/* Success Message */}
+        {success ? (
+          <div className="text-center py-12">
+            <div className={`w-16 h-16 mx-auto mb-6 rounded-full flex items-center justify-center ${
+              darkMode ? 'bg-green-950/20 border border-green-900/50' : 'bg-green-50 border border-green-200'
             }`}>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg xmlns="http://www.w3.org/2000/svg" className={`h-8 w-8 ${
+                darkMode ? 'text-green-400' : 'text-green-600'
+              }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              <h2 className="text-2xl font-bold mt-4">Club Request Submitted!</h2>
-              <p className={`mt-2 ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Thank you for your submission. The Courtly team will review your request soon.
-              </p>
-              <p className="mt-4">Redirecting to dashboard...</p>
             </div>
-          ) : (
-            <>
-              <h1 className="text-3xl font-bold mb-6">Submit a Club Request</h1>
-              <p className={`mb-6 ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Fill out this form to request your club to be added to the Courtly platform. 
-                Our team will review your submission and get back to you shortly.
+            <h2 className="text-3xl font-light mb-4">Club Request Submitted</h2>
+            <p className={`font-light ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              Thank you for your submission. Our team will review your request shortly.
+            </p>
+            <p className={`mt-4 text-sm font-light ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+              Redirecting to dashboard...
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Title */}
+            <div className="mb-12">
+              <h1 className="text-4xl sm:text-5xl font-light mb-4">Register Your Club</h1>
+              <p className={`font-light ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                Submit your club information to join the Courtly platform. Our team will review your request and get back to you shortly.
               </p>
-              
-              {/* Error Message */}
-              {error && (
-                <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg">
-                  {error}
-                </div>
-              )}
-              
-              {/* Club Request Form */}
-              <form onSubmit={handleSubmit} className={`p-6 rounded-lg shadow-md ${
-                darkMode ? "bg-gray-800" : "bg-white"
+            </div>
+            
+            {/* Error Message */}
+            {error && (
+              <div className={`mb-6 p-4 border font-light text-sm ${
+                darkMode 
+                  ? 'border-red-900/50 bg-red-950/20 text-red-400' 
+                  : 'border-red-200 bg-red-50 text-red-600'
               }`}>
-                <h2 className="text-xl font-semibold mb-4">Club Information</h2>
+                {error}
+              </div>
+            )}
+            
+            {/* Club Request Form */}
+            <form onSubmit={handleSubmit} className="space-y-8">
+              {/* Club Information Section */}
+              <div>
+                <h2 className={`text-xs font-light uppercase tracking-wider mb-6 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
+                  Club Information
+                </h2>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Club Name */}
                   <div>
-                    <label htmlFor="name" className="block mb-1 font-medium">
+                    <label 
+                      htmlFor="name" 
+                      className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                        darkMode ? 'text-gray-400' : 'text-gray-600'
+                      }`}
+                    >
                       Club Name <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -202,17 +246,22 @@ export default function ClubRequestPage() {
                       value={formData.name}
                       onChange={handleChange}
                       required
-                      className={`w-full px-4 py-2 rounded border ${
+                      className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                         darkMode 
-                          ? "bg-gray-700 border-gray-600 text-white" 
-                          : "bg-white border-gray-300"
-                      }`}
+                          ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                          : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                      } focus:outline-none`}
                     />
                   </div>
                   
                   {/* Email */}
                   <div>
-                    <label htmlFor="email" className="block mb-1 font-medium">
+                    <label 
+                      htmlFor="email" 
+                      className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                        darkMode ? 'text-gray-400' : 'text-gray-600'
+                      }`}
+                    >
                       Club Email <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -222,17 +271,22 @@ export default function ClubRequestPage() {
                       value={formData.email}
                       onChange={handleChange}
                       required
-                      className={`w-full px-4 py-2 rounded border ${
+                      className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                         darkMode 
-                          ? "bg-gray-700 border-gray-600 text-white" 
-                          : "bg-white border-gray-300"
-                      }`}
+                          ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                          : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                      } focus:outline-none`}
                     />
                   </div>
                   
                   {/* Phone */}
                   <div>
-                    <label htmlFor="phone" className="block mb-1 font-medium">
+                    <label 
+                      htmlFor="phone" 
+                      className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                        darkMode ? 'text-gray-400' : 'text-gray-600'
+                      }`}
+                    >
                       Club Phone Number
                     </label>
                     <input
@@ -241,17 +295,22 @@ export default function ClubRequestPage() {
                       name="phone"
                       value={formData.phone}
                       onChange={handleChange}
-                      className={`w-full px-4 py-2 rounded border ${
+                      className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                         darkMode 
-                          ? "bg-gray-700 border-gray-600 text-white" 
-                          : "bg-white border-gray-300"
-                      }`}
+                          ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                          : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                      } focus:outline-none`}
                     />
                   </div>
                   
                   {/* Website */}
                   <div>
-                    <label htmlFor="website" className="block mb-1 font-medium">
+                    <label 
+                      htmlFor="website" 
+                      className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                        darkMode ? 'text-gray-400' : 'text-gray-600'
+                      }`}
+                    >
                       Club Website
                     </label>
                     <input
@@ -261,21 +320,33 @@ export default function ClubRequestPage() {
                       value={formData.website}
                       onChange={handleChange}
                       placeholder="https://"
-                      className={`w-full px-4 py-2 rounded border ${
+                      className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                         darkMode 
-                          ? "bg-gray-700 border-gray-600 text-white" 
-                          : "bg-white border-gray-300"
-                      }`}
+                          ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                          : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                      } focus:outline-none`}
                     />
                   </div>
                 </div>
+              </div>
+              
+              {/* Location Section */}
+              <div className={`pt-8 border-t ${darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'}`}>
+                <h2 className={`text-xs font-light uppercase tracking-wider mb-6 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
+                  Location
+                </h2>
                 
-                <h2 className="text-xl font-semibold mb-4">Location</h2>
-                
-                <div className="grid grid-cols-1 gap-4 mb-6">
+                <div className="space-y-6">
                   {/* Address */}
                   <div>
-                    <label htmlFor="address" className="block mb-1 font-medium">
+                    <label 
+                      htmlFor="address" 
+                      className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                        darkMode ? 'text-gray-400' : 'text-gray-600'
+                      }`}
+                    >
                       Street Address
                     </label>
                     <input
@@ -284,162 +355,212 @@ export default function ClubRequestPage() {
                       name="address"
                       value={formData.address}
                       onChange={handleChange}
-                      className={`w-full px-4 py-2 rounded border ${
+                      className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
                         darkMode 
-                          ? "bg-gray-700 border-gray-600 text-white" 
-                          : "bg-white border-gray-300"
-                      }`}
+                          ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                          : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                      } focus:outline-none`}
                     />
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* City */}
+                    <div>
+                      <label 
+                        htmlFor="city" 
+                        className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                          darkMode ? 'text-gray-400' : 'text-gray-600'
+                        }`}
+                      >
+                        City <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="city"
+                        name="city"
+                        value={formData.city}
+                        onChange={handleChange}
+                        required
+                        className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
+                          darkMode 
+                            ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                            : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                        } focus:outline-none`}
+                      />
+                    </div>
+                    
+                    {/* State */}
+                    <div>
+                      <label 
+                        htmlFor="state" 
+                        className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                          darkMode ? 'text-gray-400' : 'text-gray-600'
+                        }`}
+                      >
+                        State <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="state"
+                        name="state"
+                        value={formData.state}
+                        onChange={handleChange}
+                        required
+                        className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
+                          darkMode 
+                            ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                            : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                        } focus:outline-none`}
+                      />
+                    </div>
+                    
+                    {/* ZIP */}
+                    <div>
+                      <label 
+                        htmlFor="zip" 
+                        className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                          darkMode ? 'text-gray-400' : 'text-gray-600'
+                        }`}
+                      >
+                        ZIP Code
+                      </label>
+                      <input
+                        type="text"
+                        id="zip"
+                        name="zip"
+                        value={formData.zip}
+                        onChange={handleChange}
+                        className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
+                          darkMode 
+                            ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                            : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                        } focus:outline-none`}
+                      />
+                    </div>
                   </div>
                 </div>
+              </div>
+              
+              {/* Facility Information Section */}
+              <div className={`pt-8 border-t ${darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'}`}>
+                <h2 className={`text-xs font-light uppercase tracking-wider mb-6 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
+                  Facility Information
+                </h2>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                  {/* City */}
-                  <div>
-                    <label htmlFor="city" className="block mb-1 font-medium">
-                      City <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      id="city"
-                      name="city"
-                      value={formData.city}
-                      onChange={handleChange}
-                      required
-                      className={`w-full px-4 py-2 rounded border ${
-                        darkMode 
-                          ? "bg-gray-700 border-gray-600 text-white" 
-                          : "bg-white border-gray-300"
-                      }`}
-                    />
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Number of Courts */}
+                    <div>
+                      <label 
+                        htmlFor="courts" 
+                        className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                          darkMode ? 'text-gray-400' : 'text-gray-600'
+                        }`}
+                      >
+                        Number of Courts
+                      </label>
+                      <input
+                        type="number"
+                        id="courts"
+                        name="courts"
+                        min="1"
+                        value={formData.courts}
+                        onChange={handleChange}
+                        className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
+                          darkMode 
+                            ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                            : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                        } focus:outline-none`}
+                      />
+                    </div>
+                    
+                    {/* Court Type */}
+                    <div>
+                      <label 
+                        htmlFor="courtType" 
+                        className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                          darkMode ? 'text-gray-400' : 'text-gray-600'
+                        }`}
+                      >
+                        Court Type
+                      </label>
+                      <select
+                        id="courtType"
+                        name="courtType"
+                        value={formData.courtType}
+                        onChange={handleChange}
+                        className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
+                          darkMode 
+                            ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white focus:border-gray-600' 
+                            : 'bg-white border-gray-200 text-gray-900 focus:border-gray-400'
+                        } focus:outline-none`}
+                      >
+                        <option value="hard">Hard</option>
+                        <option value="clay">Clay</option>
+                        <option value="grass">Grass</option>
+                        <option value="carpet">Carpet</option>
+                        <option value="mixed">Mixed (Multiple Types)</option>
+                      </select>
+                    </div>
                   </div>
                   
-                  {/* State */}
+                  {/* Description */}
                   <div>
-                    <label htmlFor="state" className="block mb-1 font-medium">
-                      State <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      id="state"
-                      name="state"
-                      value={formData.state}
-                      onChange={handleChange}
-                      required
-                      className={`w-full px-4 py-2 rounded border ${
-                        darkMode 
-                          ? "bg-gray-700 border-gray-600 text-white" 
-                          : "bg-white border-gray-300"
-                      }`}
-                    />
-                  </div>
-                  
-                  {/* ZIP */}
-                  <div>
-                    <label htmlFor="zip" className="block mb-1 font-medium">
-                      ZIP Code
-                    </label>
-                    <input
-                      type="text"
-                      id="zip"
-                      name="zip"
-                      value={formData.zip}
-                      onChange={handleChange}
-                      className={`w-full px-4 py-2 rounded border ${
-                        darkMode 
-                          ? "bg-gray-700 border-gray-600 text-white" 
-                          : "bg-white border-gray-300"
-                      }`}
-                    />
-                  </div>
-                </div>
-                
-                <h2 className="text-xl font-semibold mb-4">Facility Information</h2>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  {/* Number of Courts */}
-                  <div>
-                    <label htmlFor="courts" className="block mb-1 font-medium">
-                      Number of Courts
-                    </label>
-                    <input
-                      type="number"
-                      id="courts"
-                      name="courts"
-                      min="1"
-                      value={formData.courts}
-                      onChange={handleChange}
-                      className={`w-full px-4 py-2 rounded border ${
-                        darkMode 
-                          ? "bg-gray-700 border-gray-600 text-white" 
-                          : "bg-white border-gray-300"
-                      }`}
-                    />
-                  </div>
-                  
-                  {/* Court Type */}
-                  <div>
-                    <label htmlFor="courtType" className="block mb-1 font-medium">
-                      Court Type
-                    </label>
-                    <select
-                      id="courtType"
-                      name="courtType"
-                      value={formData.courtType}
-                      onChange={handleChange}
-                      className={`w-full px-4 py-2 rounded border ${
-                        darkMode 
-                          ? "bg-gray-700 border-gray-600 text-white" 
-                          : "bg-white border-gray-300"
+                    <label 
+                      htmlFor="description" 
+                      className={`block text-xs font-light uppercase tracking-wider mb-2 ${
+                        darkMode ? 'text-gray-400' : 'text-gray-600'
                       }`}
                     >
-                      <option value="hard">Hard</option>
-                      <option value="clay">Clay</option>
-                      <option value="grass">Grass</option>
-                      <option value="carpet">Carpet</option>
-                      <option value="mixed">Mixed (Multiple Types)</option>
-                    </select>
+                      Club Description
+                    </label>
+                    <textarea
+                      id="description"
+                      name="description"
+                      value={formData.description}
+                      onChange={handleChange}
+                      rows={4}
+                      className={`w-full px-4 py-3 border font-light transition-colors duration-200 ${
+                        darkMode 
+                          ? 'bg-[#0a0a0a] border-[#1a1a1a] text-white placeholder-gray-600 focus:border-gray-600' 
+                          : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400'
+                      } focus:outline-none`}
+                    ></textarea>
                   </div>
                 </div>
-                
-                {/* Description */}
-                <div className="mb-6">
-                  <label htmlFor="description" className="block mb-1 font-medium">
-                    Club Description
-                  </label>
-                  <textarea
-                    id="description"
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    rows={4}
-                    className={`w-full px-4 py-2 rounded border ${
-                      darkMode 
-                        ? "bg-gray-700 border-gray-600 text-white" 
-                        : "bg-white border-gray-300"
-                    }`}
-                  ></textarea>
-                </div>
-                
-                {/* Submit Button */}
-                <div className="text-center">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className={`px-6 py-3 rounded-lg font-medium ${
-                      darkMode
-                        ? "bg-teal-600 hover:bg-teal-700 text-white"
-                        : "bg-green-500 hover:bg-green-600 text-white"
-                    } ${loading ? "opacity-70 cursor-not-allowed" : ""}`}
-                  >
-                    {loading ? "Submitting..." : "Submit Club Request"}
-                  </button>
-                </div>
-              </form>
-            </>
-          )}
-        </div>
+              </div>
+              
+              {/* Submit Button */}
+              <div className={`pt-8 border-t ${darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'}`}>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className={`w-full py-3 px-6 font-light text-sm transition-colors duration-200 ${
+                    darkMode
+                      ? loading ? 'bg-gray-800 text-gray-500' : 'bg-white text-black hover:bg-gray-100'
+                      : loading ? 'bg-gray-200 text-gray-400' : 'bg-black text-white hover:bg-gray-900'
+                  }`}
+                >
+                  {loading ? "Submitting..." : "Submit Club Request"}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
       </div>
+      
+      {/* Footer */}
+      <footer className={`border-t py-6 transition-colors duration-300 ${
+        darkMode ? 'border-[#1a1a1a] text-gray-600' : 'border-gray-100 text-gray-400'
+      }`}>
+        <div className="text-center">
+          <p className="text-xs font-light">
+            © {new Date().getFullYear()} Courtly by JiaYou Tennis. All rights reserved.
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }

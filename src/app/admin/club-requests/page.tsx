@@ -6,11 +6,11 @@ import Link from 'next/link';
 import { auth, db } from '../../../../firebase';
 import { 
   collection, getDocs, doc, getDoc, updateDoc, deleteDoc,
-  query, where, orderBy, Timestamp, addDoc, serverTimestamp 
+  query, orderBy, where, Timestamp
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import DarkModeToggle from '@/app/components/DarkModeToggle';
 import PageTitle from '@/app/components/PageTitle';
+import { initializeClubCollections } from '@/lib/initializeClub';
 
 interface ClubRequest {
   id: string;
@@ -35,7 +35,8 @@ export default function ClubRequestsPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [canViewAll, setCanViewAll] = useState(false);
+  const [currentUid, setCurrentUid] = useState<string | null>(null);
   const [clubRequests, setClubRequests] = useState<ClubRequest[]>([]);
   const [filteredRequests, setFilteredRequests] = useState<ClubRequest[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,12 +60,6 @@ export default function ClubRequestsPage() {
     }
   }, []);
 
-  const toggleDarkMode = () => {
-    const newMode = !darkMode;
-    setDarkMode(newMode);
-    localStorage.setItem('darkMode', newMode ? 'true' : 'false');
-  };
-
   // Check if user is authorized
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -78,33 +73,50 @@ export default function ClubRequestsPage() {
       }
       
       try {
-        // Check if user has courtly role
-        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-        
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          
-          if (userData.userType === 'courtly') {
-            // User is authorized
-            setIsAuthorized(true);
-            setUser({
-              ...currentUser,
-              ...userData
-            });
-            
-            // Fetch club requests
-            fetchClubRequests();
-          } else {
-            // User is not authorized
-            setIsAuthorized(false);
-            setError("You don't have permission to access this page");
-            router.push('/dashboard');
-          }
-        } else {
+        // Check if user has courtly role either via Firestore user doc or custom auth claims
+        const [userDoc, tokenResult] = await Promise.all([
+          getDoc(doc(db, "users", currentUser.uid)),
+          currentUser.getIdTokenResult().catch(() => ({ claims: {} as any }))
+        ]);
+
+        if (!userDoc.exists()) {
           // User document doesn't exist
           setIsAuthorized(false);
           setError("User profile not found");
           router.push('/signin');
+          return;
+        }
+
+        const userData = userDoc.data();
+        let isCourtlyByDoc = userData.userType === 'courtly';
+        let isCourtlyByClaim = Boolean((tokenResult as any)?.claims?.courtlyAdmin === true);
+
+        // If not authorized yet, force refresh token once in case claims were just updated
+        if (!(isCourtlyByDoc || isCourtlyByClaim)) {
+          try {
+            await currentUser.getIdToken(true);
+            const refreshed = await currentUser.getIdTokenResult();
+            isCourtlyByClaim = Boolean(refreshed?.claims?.courtlyAdmin === true);
+          } catch {
+            // ignore
+          }
+        }
+
+        if (isCourtlyByDoc || isCourtlyByClaim) {
+          // User is authorized
+          setIsAuthorized(true);
+          setCanViewAll(true);
+          setCurrentUid(currentUser.uid);
+
+          // Fetch club requests
+          fetchClubRequests(true, currentUser.uid);
+        } else {
+          // Not Courtly staff: allow viewing their own submissions only (no actions)
+          setIsAuthorized(true);
+          setCanViewAll(false);
+          setCurrentUid(currentUser.uid);
+          setError("Limited access: showing only your own club submissions.");
+          await fetchClubRequests(false, currentUser.uid);
         }
       } catch (err) {
         console.error("Error checking authorization:", err);
@@ -119,15 +131,15 @@ export default function ClubRequestsPage() {
   }, [router]);
 
   // Fetch pending club requests
-  const fetchClubRequests = async () => {
+  const fetchClubRequests = async (viewAll: boolean = false, uid?: string | null) => {
     try {
       setLoading(true);
       
-      // Get all club submissions instead of publicClubs with approved=false
-      const clubsQuery = query(
-        collection(db, "clubSubmissions"),
-        orderBy("createdAt", "desc")
-      );
+      // Get club submissions: either all (Courtly staff) or only current user's
+      const baseCol = collection(db, "clubSubmissions");
+      const clubsQuery = viewAll
+        ? query(baseCol, orderBy("createdAt", "desc"))
+        : query(baseCol, where("submittedBy", "==", uid || "__none__"));
       
       const querySnapshot = await getDocs(clubsQuery);
       const requests: ClubRequest[] = [];
@@ -159,9 +171,13 @@ export default function ClubRequestsPage() {
       // Clear any previously selected request when refreshing data
       setSelectedRequest(null);
       setIsDetailView(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching club requests:", error);
-      setError("Failed to load club requests. Please try again later.");
+      if (error?.code === 'permission-denied') {
+        setError("Insufficient permissions to view club submissions. If you were just granted staff access, please sign out and sign back in.");
+      } else {
+        setError("Failed to load club requests. Please try again later.");
+      }
     } finally {
       setLoading(false);
     }
@@ -234,7 +250,11 @@ export default function ClubRequestsPage() {
       const submissionData = submissionDoc.data();
       
       if (type === 'approve') {
-        // 1. Create a new document in publicClubs
+        // 1. Generate a new club ID
+        const newClubRef = doc(collection(db, "orgs"));
+        const newClubId = newClubRef.id;
+        
+        // 2. Prepare club data for /orgs structure
         const clubData = {
           name: submissionData.name,
           email: submissionData.email,
@@ -247,19 +267,18 @@ export default function ClubRequestsPage() {
           description: submissionData.description || null,
           courts: submissionData.courts || 1,
           courtType: submissionData.courtType,
-          approved: true,
           submittedBy: submissionData.submittedBy,
           submitterEmail: submissionData.submitterEmail || submissionData.email,
           submitterName: submissionData.submitterName || "Unknown",
-          createdAt: serverTimestamp(),
           originalRequestId: requestId
         };
         
-        // Add the club to publicClubs
-        const newClubRef = await addDoc(collection(db, "publicClubs"), clubData);
-        console.log("New club created with ID:", newClubRef.id);
+        // 3. Initialize club with complete /orgs structure (org document + subcollections)
+        await initializeClubCollections(newClubId, clubData);
+        console.log("New club created in /orgs with ID:", newClubId);
+        console.log("Club collections initialized successfully");
         
-        // 2. Update the submitter's organization array to include the new club ID
+        // 4. Update the submitter's organizations array to include the new club
         if (submissionData.submittedBy) {
           const submitterRef = doc(db, "users", submissionData.submittedBy);
           const submitterDoc = await getDoc(submitterRef);
@@ -267,38 +286,41 @@ export default function ClubRequestsPage() {
           if (submitterDoc.exists()) {
             const userData = submitterDoc.data();
             
-            // Handle organization as an array
-            let organizations = [];
+            // Get existing organizations array (using new schema format)
+            let organizations = userData.organizations || [];
             
-            // If organization already exists as an array, use it
-            if (userData.organization && Array.isArray(userData.organization)) {
-              organizations = userData.organization;
-            } 
-            // If it exists as a string (old format), convert to array
-            else if (userData.organization) {
-              organizations = [userData.organization];
+            // Check if user is already a member of this org
+            const alreadyMember = organizations.some((org: any) => org.orgId === newClubId);
+            
+            if (!alreadyMember) {
+              // Add the new club with 'owner' role (they created/requested it)
+              organizations.push({
+                orgId: newClubId,
+                role: 'owner'
+              });
             }
             
-            // Add the new club ID if not already present
-            if (!organizations.includes(newClubRef.id)) {
-              organizations.push(newClubRef.id);
-            }
+            // Set as default org if they don't have one
+            const defaultOrgId = userData.defaultOrgId || newClubId;
             
-            // Update user with the new organizations array and admin status
+            // Update user with new organizations array and admin status
             await updateDoc(submitterRef, {
-              organization: organizations,
-              userType: userData.userType === 'member' ? 'admin' : userData.userType
+              organizations: organizations,
+              defaultOrgId: defaultOrgId,
+              userType: userData.userType === 'member' ? 'admin' : userData.userType,
+              // Keep legacy organization field for backward compatibility
+              organization: organizations.map((org: any) => org.orgId)
             });
             
-            console.log(`Updated user ${submissionData.submittedBy} with club ${newClubRef.id} in organization array`);
+            console.log(`Updated user ${submissionData.submittedBy} with club ${newClubId} as owner`);
           }
         }
         
-        // 3. Delete the submission instead of updating it
+        // 5. Delete the submission instead of updating it
         await deleteDoc(submissionRef);
         console.log("Club submission deleted:", requestId);
         
-        setSuccess("Club has been approved, added to the directory, and the request has been deleted. The submitter now has admin access to this club.");
+        setSuccess("Club has been approved with all collections initialized! The submitter now has owner access to this club.");
       } else {
         // For decline, just delete the submission
         await deleteDoc(submissionRef);
@@ -306,8 +328,8 @@ export default function ClubRequestsPage() {
         setSuccess("Club request has been declined and deleted.");
       }
       
-      // Refresh club requests
-      await fetchClubRequests();
+  // Refresh club requests with correct scope
+  await fetchClubRequests(canViewAll, currentUid);
       
       // Close confirmation dialog
       setConfirmAction(null);
@@ -379,144 +401,118 @@ export default function ClubRequestsPage() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${
-      darkMode ? "bg-gray-900 text-gray-50" : "bg-gray-50 text-gray-900"
+      darkMode ? "bg-[#0a0a0a] text-white" : "bg-white text-black"
     }`}>
       <PageTitle title="Club Requests - Courtly Admin" />
       
       {/* Header */}
-      <header className={`py-4 px-6 shadow-md flex items-center justify-between ${
-        darkMode ? "bg-gray-800" : "bg-white"
+      <header className={`py-6 px-6 border-b flex items-center justify-between ${
+        darkMode ? "border-[#1a1a1a]" : "border-gray-100"
       }`}>
-        <div className="flex items-center space-x-4">
-          <Link href="/dashboard" className="flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back to Dashboard
+        <div className="flex items-center space-x-6">
+          <Link href="/dashboard" className="text-xs uppercase tracking-wider font-light hover:opacity-70 transition">
+            ← Back
           </Link>
-          <h1 className="text-xl font-bold">Club Registration Requests</h1>
+          <h1 className="text-xs uppercase tracking-wider font-light">Club Requests</h1>
         </div>
         
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={toggleDarkMode}
-            className={`p-2 rounded-full ${darkMode 
-              ? "bg-gray-700 text-teal-400 hover:bg-gray-600" 
-              : "bg-gray-200 text-amber-500 hover:bg-gray-300"
-            }`}
-            aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {darkMode ? (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-              </svg>
-            )}
-          </button>
-          <div className={`px-3 py-1 rounded-full text-sm ${
-            darkMode ? "bg-violet-900 text-violet-200" : "bg-violet-100 text-violet-800"
-          }`}>
-            Courtly Staff
-          </div>
+        <div className={`px-3 py-2 border text-xs uppercase tracking-wider font-light ${
+          darkMode ? "border-white/20" : "border-black/20"
+        }`}>
+          Courtly Staff
         </div>
       </header>
       
       <div className="container mx-auto px-4 py-8">
         {/* Alert messages */}
         {error && (
-          <div className="mb-6 p-4 rounded-lg bg-red-100 text-red-700 border border-red-200">
-            <div className="flex">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>{error}</span>
-            </div>
+          <div className={`mb-6 px-4 py-3 text-xs uppercase tracking-wider font-light border ${
+            darkMode ? "border-white/20 bg-white/5" : "border-black/20 bg-black/5"
+          }`}>
+            {error}
           </div>
         )}
         
         {success && (
-          <div className="mb-6 p-4 rounded-lg bg-green-100 text-green-700 border border-green-200">
-            <div className="flex">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <span>{success}</span>
-            </div>
+          <div className={`mb-6 px-4 py-3 text-xs uppercase tracking-wider font-light border ${
+            darkMode ? "border-white/20 bg-white/5" : "border-black/20 bg-black/5"
+          }`}>
+            {success}
           </div>
         )}
         
         {/* Main content */}
         {isDetailView && selectedRequest ? (
           // Detail view of a club request
-          <div className={`rounded-lg shadow-md ${
-            darkMode ? "bg-gray-800" : "bg-white"
+          <div className={`border ${
+            darkMode ? "border-[#1a1a1a]" : "border-gray-100"
           }`}>
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className={`p-6 border-b ${darkMode ? "border-[#1a1a1a]" : "border-gray-100"}`}>
               <div className="flex justify-between items-center mb-4">
                 <button
                   onClick={backToList}
-                  className={`flex items-center text-sm ${
-                    darkMode ? "text-gray-300 hover:text-white" : "text-gray-600 hover:text-gray-900"
+                  className={`text-xs uppercase tracking-wider font-light hover:opacity-70 transition ${
+                    darkMode ? "text-white" : "text-black"
                   }`}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                  Back to all requests
+                  ← Back to all requests
                 </button>
                 
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => declineClub(selectedRequest.id, selectedRequest.name)}
-                    className="px-4 py-2 rounded text-white bg-red-500 hover:bg-red-600 transition-colors"
-                  >
-                    Decline
-                  </button>
-                  <button
-                    onClick={() => approveClub(selectedRequest.id, selectedRequest.name)}
-                    className="px-4 py-2 rounded text-white bg-green-500 hover:bg-green-600 transition-colors"
-                  >
-                    Approve
-                  </button>
-                </div>
+                {canViewAll && (
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => declineClub(selectedRequest.id, selectedRequest.name)}
+                      className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
+                        darkMode
+                          ? "border border-white/30 text-white hover:bg-white hover:text-black"
+                          : "border border-black/30 text-black hover:bg-black hover:text-white"
+                      }`}
+                    >
+                      Decline
+                    </button>
+                    <button
+                      onClick={() => approveClub(selectedRequest.id, selectedRequest.name)}
+                      className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
+                        darkMode
+                          ? "border border-white text-white hover:bg-white hover:text-black"
+                          : "border border-black text-black hover:bg-black hover:text-white"
+                      }`}
+                    >
+                      Approve
+                    </button>
+                  </div>
+                )}
               </div>
               
-              <h2 className="text-2xl font-bold mb-2">{selectedRequest.name}</h2>
-              <div className={`inline-block px-2 py-1 rounded-full text-xs ${
-                darkMode ? "bg-teal-900 text-teal-200" : "bg-teal-100 text-teal-800"
-              } mb-4`}>
+              <h2 className="text-xs uppercase tracking-wider font-light mb-4">{selectedRequest.name}</h2>
+              <div className={`text-xs font-light mb-4 ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
                 Submitted on {formatDate(selectedRequest.createdAt)}
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <h3 className="text-lg font-semibold mb-3">Contact Information</h3>
-                  <div className={`p-4 rounded-lg ${
-                    darkMode ? "bg-gray-700" : "bg-gray-50"
+                  <h3 className="text-xs uppercase tracking-wider font-light mb-3">Contact Information</h3>
+                  <div className={`p-4 border ${
+                    darkMode ? "border-[#1a1a1a]/50" : "border-gray-100"
                   }`}>
                     <div className="mb-3">
-                      <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Email</label>
-                      <p>{selectedRequest.email}</p>
+                      <label className={`block text-xs uppercase tracking-wider font-light mb-1 ${darkMode ? "text-gray-600" : "text-gray-400"}`}>Email</label>
+                      <p className="text-xs font-light">{selectedRequest.email}</p>
                     </div>
                     {selectedRequest.phone && (
                       <div className="mb-3">
-                        <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Phone</label>
-                        <p>{selectedRequest.phone}</p>
+                        <label className={`block text-xs uppercase tracking-wider font-light mb-1 ${darkMode ? "text-gray-600" : "text-gray-400"}`}>Phone</label>
+                        <p className="text-xs font-light">{selectedRequest.phone}</p>
                       </div>
                     )}
                     {selectedRequest.website && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Website</label>
+                        <label className={`block text-xs uppercase tracking-wider font-light mb-1 ${darkMode ? "text-gray-600" : "text-gray-400"}`}>Website</label>
                         <a
                           href={selectedRequest.website.startsWith('http') ? selectedRequest.website : `https://${selectedRequest.website}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className={`${
-                            darkMode ? "text-teal-400 hover:text-teal-300" : "text-teal-600 hover:text-teal-700"
-                          }`}
+                          className="text-xs font-light hover:opacity-70 transition"
                         >
                           {selectedRequest.website}
                         </a>
@@ -526,24 +522,24 @@ export default function ClubRequestsPage() {
                 </div>
                 
                 <div>
-                  <h3 className="text-lg font-semibold mb-3">Location</h3>
-                  <div className={`p-4 rounded-lg ${
-                    darkMode ? "bg-gray-700" : "bg-gray-50"
+                  <h3 className="text-xs uppercase tracking-wider font-light mb-3">Location</h3>
+                  <div className={`p-4 border ${
+                    darkMode ? "border-[#1a1a1a]/50" : "border-gray-100"
                   }`}>
                     {selectedRequest.address && (
                       <div className="mb-3">
-                        <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Address</label>
-                        <p>{selectedRequest.address}</p>
+                        <label className={`block text-xs uppercase tracking-wider font-light mb-1 ${darkMode ? "text-gray-600" : "text-gray-400"}`}>Address</label>
+                        <p className="text-xs font-light">{selectedRequest.address}</p>
                       </div>
                     )}
                     <div className="mb-3">
-                      <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">City, State</label>
-                      <p>{selectedRequest.city}, {selectedRequest.state}</p>
+                      <label className={`block text-xs uppercase tracking-wider font-light mb-1 ${darkMode ? "text-gray-600" : "text-gray-400"}`}>City, State</label>
+                      <p className="text-xs font-light">{selectedRequest.city}, {selectedRequest.state}</p>
                     </div>
                     {selectedRequest.zip && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">ZIP Code</label>
-                        <p>{selectedRequest.zip}</p>
+                        <label className={`block text-xs uppercase tracking-wider font-light mb-1 ${darkMode ? "text-gray-600" : "text-gray-400"}`}>ZIP Code</label>
+                        <p className="text-xs font-light">{selectedRequest.zip}</p>
                       </div>
                     )}
                   </div>
@@ -587,20 +583,22 @@ export default function ClubRequestsPage() {
                 Club ID: {selectedRequest.id}
               </div>
               
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => declineClub(selectedRequest.id, selectedRequest.name)}
-                  className="px-4 py-2 rounded text-white bg-red-500 hover:bg-red-600 transition-colors"
-                >
-                  Decline
-                </button>
-                <button
-                  onClick={() => approveClub(selectedRequest.id, selectedRequest.name)}
-                  className="px-4 py-2 rounded text-white bg-green-500 hover:bg-green-600 transition-colors"
-                >
-                  Approve
-                </button>
-              </div>
+              {canViewAll && (
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => declineClub(selectedRequest.id, selectedRequest.name)}
+                    className="px-4 py-2 rounded text-white bg-red-500 hover:bg-red-600 transition-colors"
+                  >
+                    Decline
+                  </button>
+                  <button
+                    onClick={() => approveClub(selectedRequest.id, selectedRequest.name)}
+                    className="px-4 py-2 rounded text-white bg-green-500 hover:bg-green-600 transition-colors"
+                  >
+                    Approve
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -608,71 +606,53 @@ export default function ClubRequestsPage() {
           <>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
               <div>
-                <h2 className="text-xl font-bold mb-2">Pending Club Requests</h2>
-                <p className={darkMode ? "text-gray-400" : "text-gray-600"}>
-                  Review and approve club submissions from the public registration form.
+                <h2 className="text-xs uppercase tracking-wider font-light mb-2">Pending Requests</h2>
+                <p className={`text-xs font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
+                  Review and approve club submissions
                 </p>
               </div>
               
               <div className="mt-4 md:mt-0 flex items-center space-x-2">
                 <button
-                  onClick={fetchClubRequests}
-                  className={`px-4 py-2 rounded-lg flex items-center ${
+                  onClick={() => fetchClubRequests(canViewAll, currentUid)}
+                  className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
                     darkMode 
-                      ? "bg-teal-600 text-white hover:bg-teal-700" 
-                      : "bg-green-500 text-white hover:bg-green-600"
-                  } transition-colors`}
+                      ? "border border-white text-white hover:bg-white hover:text-black" 
+                      : "border border-black text-black hover:bg-black hover:text-white"
+                  }`}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
                   Refresh
                 </button>
               </div>
             </div>
             
             {/* Search and filter bar */}
-            <div className={`p-4 rounded-lg shadow-md mb-6 ${
-              darkMode ? "bg-gray-800" : "bg-white"
+            <div className={`p-4 border mb-6 ${
+              darkMode ? "border-[#1a1a1a]" : "border-gray-100"
             }`}>
               <div className="flex flex-col md:flex-row space-y-3 md:space-y-0 md:space-x-4">
-                <div className="relative flex-grow">
+                <div className="flex-grow">
                   <input
                     type="text"
                     placeholder="Search club requests..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className={`w-full px-4 py-2 pr-10 rounded-lg ${
+                    className={`w-full px-4 py-3 text-xs font-light focus:outline-none ${
                       darkMode 
-                        ? "bg-gray-700 border-gray-600 text-white" 
-                        : "bg-white border-gray-300 text-gray-900"
-                    } border focus:outline-none focus:ring-2 ${
-                      darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
+                        ? "bg-[#0a0a0a] border border-[#1a1a1a] text-white placeholder-gray-600" 
+                        : "bg-white border border-gray-100 text-black placeholder-gray-400"
                     }`}
                   />
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className={`h-5 w-5 absolute right-3 top-2.5 ${
-                      darkMode ? "text-gray-400" : "text-gray-500"
-                    }`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
                 </div>
                 
                 <div className="flex-shrink-0">
                   <select
                     value={filter}
-                    onChange={(e) => setFilter(e.target.value as any)}
-                    className={`px-4 py-2 rounded-lg ${
+                    onChange={(e) => setFilter(e.target.value as 'all' | 'recent' | 'oldest')}
+                    className={`px-4 py-3 text-xs font-light focus:outline-none ${
                       darkMode 
-                        ? "bg-gray-700 border-gray-600 text-white" 
-                        : "bg-white border-gray-300 text-gray-900"
-                    } border focus:outline-none focus:ring-2 ${
-                      darkMode ? "focus:ring-teal-500" : "focus:ring-green-500"
+                        ? "bg-[#0a0a0a] border border-[#1a1a1a] text-white" 
+                        : "bg-white border border-gray-100 text-black"
                     }`}
                   >
                     <option value="all">All Requests</option>
@@ -767,26 +747,28 @@ export default function ClubRequestsPage() {
                           View Details
                         </button>
                         
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => declineClub(request.id, request.name)}
-                            className="p-2 rounded-full text-red-500 hover:bg-red-100 dark:hover:bg-red-900"
-                            title="Decline Request"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => approveClub(request.id, request.name)}
-                            className="p-2 rounded-full text-green-500 hover:bg-green-100 dark:hover:bg-green-900"
-                            title="Approve Request"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          </button>
-                        </div>
+                        {canViewAll && (
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => declineClub(request.id, request.name)}
+                              className="p-2 rounded-full text-red-500 hover:bg-red-100 dark:hover:bg-red-900"
+                              title="Decline Request"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => approveClub(request.id, request.name)}
+                              className="p-2 rounded-full text-green-500 hover:bg-green-100 dark:hover:bg-green-900"
+                              title="Approve Request"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -799,18 +781,18 @@ export default function ClubRequestsPage() {
         {/* Confirmation Modal */}
         {confirmAction && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className={`w-full max-w-md rounded-lg shadow-lg ${
-              darkMode ? "bg-gray-800" : "bg-white"
-            } p-6`}>
-              <h3 className="text-xl font-semibold mb-4">
+            <div className={`w-full max-w-md border p-6 ${
+              darkMode ? "bg-[#0a0a0a] border-[#1a1a1a]" : "bg-white border-gray-100"
+            }`}>
+              <h3 className="text-xs uppercase tracking-wider font-light mb-4">
                 {confirmAction.type === 'approve' ? 'Approve' : 'Decline'} Club
               </h3>
-              <p className={`mb-6 ${
-                darkMode ? "text-gray-300" : "text-gray-700"
+              <p className={`mb-6 text-xs font-light ${
+                darkMode ? "text-gray-500" : "text-gray-500"
               }`}>
-                Are you sure you want to {confirmAction.type === 'approve' ? 'approve' : 'decline'} the registration for <span className="font-medium">{confirmAction.clubName}</span>?
+                Are you sure you want to {confirmAction.type === 'approve' ? 'approve' : 'decline'} <span className="font-normal">{confirmAction.clubName}</span>?
                 {confirmAction.type === 'approve' 
-                  ? " This will make the club visible in the public directory." 
+                  ? " This will make the club visible in the directory." 
                   : " This will permanently remove the request."}
               </p>
               
@@ -818,22 +800,22 @@ export default function ClubRequestsPage() {
                 <button
                   onClick={cancelConfirmation}
                   disabled={processing}
-                  className={`px-4 py-2 rounded ${
+                  className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
                     darkMode 
-                      ? "bg-gray-700 text-gray-200 hover:bg-gray-600" 
-                      : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                  }`}
+                      ? "border border-white/30 text-white hover:bg-white hover:text-black" 
+                      : "border border-black/30 text-black hover:bg-black hover:text-white"
+                  } ${processing ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmAction}
                   disabled={processing}
-                  className={`px-4 py-2 rounded text-white ${
-                    confirmAction.type === 'approve'
-                      ? "bg-green-500 hover:bg-green-600"
-                      : "bg-red-500 hover:bg-red-600"
-                  } ${processing ? "opacity-70 cursor-not-allowed" : ""}`}
+                  className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
+                    darkMode
+                      ? "border border-white text-white hover:bg-white hover:text-black"
+                      : "border border-black text-black hover:bg-black hover:text-white"
+                  } ${processing ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   {processing 
                     ? "Processing..." 
@@ -847,15 +829,6 @@ export default function ClubRequestsPage() {
           </div>
         )}
       </div>
-      
-      {/* Footer */}
-      <footer className={`mt-12 py-6 ${
-        darkMode ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"
-      }`}>
-        <div className="container mx-auto px-4 text-center">
-          <p>© {new Date().getFullYear()} Courtly by JiaYou Tennis. All rights reserved.</p>
-        </div>
-      </footer>
     </div>
   );
 }
