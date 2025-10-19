@@ -6,11 +6,11 @@ import Link from 'next/link';
 import { auth, db } from '../../../../firebase';
 import { 
   collection, doc, getDoc, getDocs, query, where, 
-  updateDoc, deleteDoc, Timestamp, serverTimestamp, addDoc
+  updateDoc, deleteDoc, serverTimestamp, addDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth'; // Import from firebase/auth instead
 import Image from 'next/image';
-import PageTitle from '@/app/components/PageTitle';
+import PageTitle from '../../components/PageTitle';
 
 // Define types
 type MemberRequest = {
@@ -414,51 +414,6 @@ export default function MemberRequestsPage() {
     }
   };
   
-  // Add this function after your handleApprove function
-  const simpleApprove = async (request: MemberRequest) => {
-    try {
-      setLoading(true);
-      setError('');
-      console.log("Simple approve started for request:", request.id);
-      console.log("Current user:", auth.currentUser?.uid);
-      
-      // STEP 1: ONLY update the request status first
-      await updateDoc(doc(db, "clubJoinRequests", request.id), {
-        status: "approved",
-        updatedAt: serverTimestamp()
-      });
-      
-      console.log("Request status updated successfully");
-      
-      // Update local state
-      const updatedRequests = memberRequests.map(req => {
-        if (req.id === request.id) {
-          return { 
-            ...req, 
-            status: "approved" as const,
-            updatedAt: new Date() 
-          };
-        }
-        return req;
-      });
-      
-      setMemberRequests(updatedRequests);
-      applyFilters(updatedRequests);
-      setSuccess(`Successfully approved ${request.userName}'s request. Organization field will be updated separately.`);
-      
-      // Close the modal if it's open
-      if (isDetailModalOpen && currentRequest?.id === request.id) {
-        setIsDetailModalOpen(false);
-      }
-      
-    } catch (error) {
-      console.error("Simple approve error:", error);
-      setError("Approval failed: " + (error instanceof Error ? error.message : String(error)));
-    } finally {
-      setLoading(false);
-    }
-  };
-  
   // Handle request rejection
   const handleReject = async (request: MemberRequest) => {
     if (!confirm("Are you sure you want to reject this membership request?")) {
@@ -721,10 +676,6 @@ export default function MemberRequestsPage() {
     try {
       setLoading(true);
       setError("");
-      
-      // Create a function to update user through a Cloud Function
-      // This avoids direct permission issues
-      const userDocRef = doc(db, "users", userId);
       
       // Just update the UI for now
       setSuccess(`User organization will be updated separately by a Courtly administrator.`);

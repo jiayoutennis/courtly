@@ -1,6 +1,6 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, Timestamp, serverTimestamp, CollectionReference, DocumentData } from 'firebase/firestore';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 // Firebase configuration
@@ -16,12 +16,11 @@ const firebaseConfig = {
 
 // Initialize Firebase if it hasn't been initialized
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
-const db = getFirestore(app);
+const db = getFirestore(app!);
 const auth = getAuth(app);
 const storage = getStorage(app);
 
 // Collection references for type safety
-const usersCollection = collection(db, 'users');
 const publicClubsCollection = collection(db, 'publicClubs');
 const reservationsCollection = collection(db, 'reservations');
 const courtsCollection = collection(db, 'courts');
