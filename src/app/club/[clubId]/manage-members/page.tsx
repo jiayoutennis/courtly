@@ -400,6 +400,68 @@ export default function ManageMembersPage() {
     }
   };
 
+  const handlePromoteToCoach = async (memberId: string, memberEmail: string) => {
+    if (!confirm(`Are you sure you want to make ${memberEmail} a coach? Coaches can reserve courts without restrictions.`)) {
+      return;
+    }
+
+    setProcessingId(memberId);
+    setError("");
+    setSuccessMessage("");
+
+    try {
+      await updateDoc(doc(db, "users", memberId), {
+        userType: "coach",
+        updatedAt: serverTimestamp()
+      });
+
+      setSuccessMessage(`${memberEmail} is now a coach with unrestricted booking privileges`);
+      
+      // Update in members list
+      setMembers(prev => prev.map(member => 
+        member.id === memberId ? { ...member, userType: "coach" } : member
+      ));
+      
+      setTimeout(() => setSuccessMessage(""), 5000);
+    } catch (error) {
+      console.error("Error promoting to coach:", error);
+      setError("Failed to promote to coach. Please try again.");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleDemoteFromCoach = async (memberId: string, memberEmail: string) => {
+    if (!confirm(`Are you sure you want to remove coach status from ${memberEmail}?`)) {
+      return;
+    }
+
+    setProcessingId(memberId);
+    setError("");
+    setSuccessMessage("");
+
+    try {
+      await updateDoc(doc(db, "users", memberId), {
+        userType: "member",
+        updatedAt: serverTimestamp()
+      });
+
+      setSuccessMessage(`${memberEmail} is now a regular member`);
+      
+      // Update in members list
+      setMembers(prev => prev.map(member => 
+        member.id === memberId ? { ...member, userType: "member" } : member
+      ));
+      
+      setTimeout(() => setSuccessMessage(""), 5000);
+    } catch (error) {
+      console.error("Error demoting from coach:", error);
+      setError("Failed to demote from coach. Please try again.");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 ${
@@ -601,6 +663,8 @@ export default function ManageMembersPage() {
                             <span className={`px-3 py-1 border text-xs font-light uppercase tracking-wider ${
                               member.userType === "admin"
                                 ? (darkMode ? "border-purple-900/50 text-purple-400" : "border-purple-200 text-purple-600")
+                                : member.userType === "coach"
+                                ? (darkMode ? "border-green-900/50 text-green-400" : "border-green-200 text-green-600")
                                 : member.userType === "courtly"
                                 ? (darkMode ? "border-yellow-900/50 text-yellow-400" : "border-yellow-200 text-yellow-600")
                                 : (darkMode ? "border-blue-900/50 text-blue-400" : "border-blue-200 text-blue-600")
@@ -611,17 +675,30 @@ export default function ManageMembersPage() {
                           <td className="px-6 py-4 text-right text-sm font-light whitespace-nowrap">
                             <div className="flex justify-end gap-4">
                               {member.userType === "member" && (
-                                <button
-                                  onClick={() => handlePromoteToAdmin(member.id, member.email)}
-                                  disabled={processingId === member.id}
-                                  className={`underline hover:no-underline transition-colors duration-200 ${
-                                    processingId === member.id
-                                      ? (darkMode ? "text-gray-600" : "text-gray-400")
-                                      : (darkMode ? "text-green-400" : "text-green-600")
-                                  }`}
-                                >
-                                  Make Admin
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => handlePromoteToAdmin(member.id, member.email)}
+                                    disabled={processingId === member.id}
+                                    className={`underline hover:no-underline transition-colors duration-200 ${
+                                      processingId === member.id
+                                        ? (darkMode ? "text-gray-600" : "text-gray-400")
+                                        : (darkMode ? "text-purple-400" : "text-purple-600")
+                                    }`}
+                                  >
+                                    Make Admin
+                                  </button>
+                                  <button
+                                    onClick={() => handlePromoteToCoach(member.id, member.email)}
+                                    disabled={processingId === member.id}
+                                    className={`underline hover:no-underline transition-colors duration-200 ${
+                                      processingId === member.id
+                                        ? (darkMode ? "text-gray-600" : "text-gray-400")
+                                        : (darkMode ? "text-green-400" : "text-green-600")
+                                    }`}
+                                  >
+                                    Make Coach
+                                  </button>
+                                </>
                               )}
                               {member.userType === "admin" && (
                                 <button
@@ -634,6 +711,19 @@ export default function ManageMembersPage() {
                                   }`}
                                 >
                                   Remove Admin
+                                </button>
+                              )}
+                              {member.userType === "coach" && (
+                                <button
+                                  onClick={() => handleDemoteFromCoach(member.id, member.email)}
+                                  disabled={processingId === member.id}
+                                  className={`underline hover:no-underline transition-colors duration-200 ${
+                                    processingId === member.id
+                                      ? (darkMode ? "text-gray-600" : "text-gray-400")
+                                      : (darkMode ? "text-yellow-400" : "text-yellow-600")
+                                  }`}
+                                >
+                                  Remove Coach
                                 </button>
                               )}
                               {member.userType !== "courtly" && (

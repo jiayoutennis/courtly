@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth, db } from '../../../firebase';
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import PageTitle from '@/app/components/PageTitle';
 
@@ -15,6 +15,7 @@ export default function SignInPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [resendVerification, setResendVerification] = useState(false);
   
   const router = useRouter();
 
@@ -23,6 +24,12 @@ export default function SignInPage() {
     const savedMode = localStorage.getItem('darkMode');
     if (savedMode === 'true') {
       setDarkMode(true);
+    }
+    
+    // Check for verification pending parameter
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('verification') === 'pending') {
+      setSuccess('Account created! Please check your email to verify your account before signing in.');
     }
   }, []);
 
@@ -36,13 +43,24 @@ export default function SignInPage() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setResendVerification(false);
     setLoading(true);
     
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Check if email is verified
+      if (!user.emailVerified) {
+        setError('Please verify your email before signing in. Check your inbox for the verification link.');
+        setResendVerification(true);
+        await auth.signOut(); // Sign out the user
+        setLoading(false);
+        return;
+      }
       
       // Check if user exists in database
-      const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
       
       if (userDoc.exists()) {
         setSuccess('Sign in successful! Redirecting...');
@@ -84,6 +102,37 @@ export default function SignInPage() {
         default:
           setError(`Failed to sign in: ${err.message}`);
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle resend verification email
+  const handleResendVerification = async () => {
+    if (!email || !password) {
+      setError('Please enter your email and password first');
+      return;
+    }
+    
+    setLoading(true);
+    setError('');
+    
+    try {
+      // Sign in temporarily to get user object
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Send verification email
+      await sendEmailVerification(user);
+      
+      // Sign out immediately
+      await auth.signOut();
+      
+      setSuccess('Verification email sent! Please check your inbox.');
+      setResendVerification(false);
+    } catch (err: any) {
+      console.error('Resend verification error:', err);
+      setError('Failed to resend verification email. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -273,6 +322,22 @@ export default function SignInPage() {
                 "Sign In"
               )}
             </button>
+
+            {/* Resend Verification Button */}
+            {resendVerification && (
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={loading}
+                className={`w-full py-3 px-4 rounded font-light text-sm transition-colors ${
+                  darkMode
+                    ? 'border border-white text-white hover:bg-white hover:text-black'
+                    : 'border border-black text-black hover:bg-black hover:text-white'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                Resend Verification Email
+              </button>
+            )}
 
             {/* Divider */}
             <div className="flex items-center my-6">

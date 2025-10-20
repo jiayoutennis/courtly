@@ -299,16 +299,16 @@ export default function ManageAllUsersPage() {
     }`}>
       <PageTitle title="Manage All Users - Courtly" />
       
-      <header className={`py-6 px-4 border-b ${
+      <header className={`py-4 sm:py-6 px-4 border-b ${
         darkMode ? "border-[#1a1a1a]" : "border-gray-100"
       }`}>
         <div className="container mx-auto">
-          <div className="flex justify-between items-center">
-            <h1 className="text-xs uppercase tracking-wider font-light">Manage All Users</h1>
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
+            <h1 className="text-[10px] sm:text-xs uppercase tracking-wider font-light">Manage All Users</h1>
+            <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
               <Link
                 href="/dashboard"
-                className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
+                className={`flex-1 sm:flex-initial text-center px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs uppercase tracking-wider font-light transition ${
                   darkMode
                     ? "border border-white text-white hover:bg-white hover:text-black"
                     : "border border-black text-black hover:bg-black hover:text-white"
@@ -321,17 +321,17 @@ export default function ManageAllUsersPage() {
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-6 sm:py-8">
         {/* Success/Error Messages */}
         {success && (
-          <div className={`mb-6 px-4 py-3 text-xs uppercase tracking-wider font-light border ${
+          <div className={`mb-4 sm:mb-6 px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs uppercase tracking-wider font-light border ${
             darkMode ? "border-white/20 bg-white/5" : "border-black/20 bg-black/5"
           }`}>
             {success}
           </div>
         )}
         {error && (
-          <div className={`mb-6 px-4 py-3 text-xs uppercase tracking-wider font-light border ${
+          <div className={`mb-4 sm:mb-6 px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs uppercase tracking-wider font-light border ${
             darkMode ? "border-white/20 bg-white/5" : "border-black/20 bg-black/5"
           }`}>
             {error}
@@ -339,10 +339,10 @@ export default function ManageAllUsersPage() {
         )}
 
         {/* Tabs */}
-        <div className="mb-6 flex gap-2">
+        <div className="mb-4 sm:mb-6 flex gap-2 overflow-x-auto">
           <button
             onClick={() => setActiveTab("users")}
-            className={`px-6 py-3 text-xs uppercase tracking-wider font-light transition ${
+            className={`px-4 sm:px-6 py-2 sm:py-3 text-[10px] sm:text-xs uppercase tracking-wider font-light transition whitespace-nowrap ${
               activeTab === "users"
                 ? darkMode
                   ? "border border-white text-white bg-white/5"
@@ -374,13 +374,13 @@ export default function ManageAllUsersPage() {
         {activeTab === "users" && (
           <div>
             {/* Filters */}
-            <div className="mb-6 flex flex-col md:flex-row gap-4">
+            <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row gap-3 sm:gap-4">
               <input
                 type="text"
                 placeholder="Search by email or name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className={`flex-1 px-4 py-3 text-xs font-light focus:outline-none ${
+                className={`flex-1 px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs font-light focus:outline-none ${
                   darkMode
                     ? "bg-[#0a0a0a] border border-[#1a1a1a] text-white placeholder-gray-600"
                     : "bg-white border border-gray-100 text-black placeholder-gray-400"
@@ -389,7 +389,7 @@ export default function ManageAllUsersPage() {
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value as any)}
-                className={`px-4 py-3 text-xs font-light focus:outline-none ${
+                className={`px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs font-light focus:outline-none ${
                   darkMode
                     ? "bg-[#0a0a0a] border border-[#1a1a1a] text-white"
                     : "bg-white border border-gray-100 text-black"
@@ -408,22 +408,22 @@ export default function ManageAllUsersPage() {
                 darkMode ? "border-[#1a1a1a]" : "border-gray-100"
               }`}>
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  <table className="w-full table-auto">
                     <thead className={`border-b ${darkMode ? "border-[#1a1a1a]" : "border-gray-100"}`}>
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs uppercase tracking-wider font-light">
+                        <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs uppercase tracking-wider font-light whitespace-nowrap">
                           Email
                         </th>
-                        <th className="px-6 py-3 text-left text-xs uppercase tracking-wider font-light">
+                        <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs uppercase tracking-wider font-light whitespace-nowrap">
                           Name
                         </th>
-                        <th className="px-6 py-3 text-left text-xs uppercase tracking-wider font-light">
+                        <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs uppercase tracking-wider font-light whitespace-nowrap">
                           Role
                         </th>
-                        <th className="px-6 py-3 text-left text-xs uppercase tracking-wider font-light">
+                        <th className="hidden lg:table-cell px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs uppercase tracking-wider font-light whitespace-nowrap">
                           Organizations
                         </th>
-                        <th className="px-6 py-3 text-left text-xs uppercase tracking-wider font-light">
+                        <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs uppercase tracking-wider font-light whitespace-nowrap">
                           Actions
                         </th>
                       </tr>
@@ -431,28 +431,28 @@ export default function ManageAllUsersPage() {
                     <tbody className={`${darkMode ? "divide-y divide-[#1a1a1a]" : "divide-y divide-gray-100"}`}>
                       {filteredUsers.map((user) => (
                         <tr key={user.id}>
-                          <td className="px-6 py-4 whitespace-nowrap text-xs font-light">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-[10px] sm:text-xs font-light">
                             {user.email}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-xs font-light">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-[10px] sm:text-xs font-light">
                             {user.fullName || "-"}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 border text-xs uppercase tracking-wider font-light ${
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
+                            <span className={`px-2 py-1 border text-[10px] sm:text-xs uppercase tracking-wider font-light ${
                               darkMode ? "border-white/20" : "border-black/20"
                             }`}>
                               {user.userType}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-xs font-light max-w-xs truncate">
+                          <td className="hidden lg:table-cell px-3 sm:px-6 py-3 sm:py-4 text-[10px] sm:text-xs font-light max-w-xs truncate">
                             {getOrganizationNames(user.organization)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-xs">
-                            <div className="flex gap-2">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-[10px] sm:text-xs">
+                            <div className="flex flex-col sm:flex-row gap-2">
                               <button
                                 onClick={() => openOrgModal(user)}
                                 disabled={processingId === user.id}
-                                className={`px-3 py-2 text-xs uppercase tracking-wider font-light transition ${
+                                className={`px-2 sm:px-3 py-2 text-[10px] sm:text-xs uppercase tracking-wider font-light transition whitespace-nowrap ${
                                   processingId === user.id
                                     ? darkMode
                                       ? "border border-gray-600 text-gray-600 cursor-not-allowed"
@@ -471,7 +471,7 @@ export default function ManageAllUsersPage() {
                                     <button
                                       onClick={() => handleChangeUserType(user.id, 'admin')}
                                       disabled={processingId === user.id}
-                                      className={`px-3 py-2 text-xs uppercase tracking-wider font-light transition ${
+                                      className={`px-2 sm:px-3 py-2 text-[10px] sm:text-xs uppercase tracking-wider font-light transition whitespace-nowrap ${
                                         processingId === user.id
                                           ? darkMode
                                             ? "border border-gray-600 text-gray-600 cursor-not-allowed"
@@ -488,7 +488,7 @@ export default function ManageAllUsersPage() {
                                     <button
                                       onClick={() => handleChangeUserType(user.id, 'member')}
                                       disabled={processingId === user.id}
-                                      className={`px-3 py-2 text-xs uppercase tracking-wider font-light transition ${
+                                      className={`px-2 sm:px-3 py-2 text-[10px] sm:text-xs uppercase tracking-wider font-light transition whitespace-nowrap ${
                                         processingId === user.id
                                           ? darkMode
                                             ? "border border-gray-600 text-gray-600 cursor-not-allowed"
@@ -504,7 +504,7 @@ export default function ManageAllUsersPage() {
                                   <button
                                     onClick={() => handleDeleteUser(user.id, user.email)}
                                     disabled={processingId === user.id}
-                                    className={`px-3 py-2 text-xs uppercase tracking-wider font-light transition ${
+                                    className={`px-2 sm:px-3 py-2 text-[10px] sm:text-xs uppercase tracking-wider font-light transition whitespace-nowrap ${
                                       processingId === user.id
                                         ? darkMode
                                           ? "border border-gray-600 text-gray-600 cursor-not-allowed"
@@ -527,10 +527,10 @@ export default function ManageAllUsersPage() {
                 </div>
               </div>
             ) : (
-              <div className={`p-8 border text-center ${
+              <div className={`p-6 sm:p-8 border text-center ${
                 darkMode ? "border-[#1a1a1a]" : "border-gray-100"
               }`}>
-                <p className={`text-xs uppercase tracking-wider font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
+                <p className={`text-[10px] sm:text-xs uppercase tracking-wider font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
                   No users found.
                 </p>
               </div>
@@ -541,13 +541,13 @@ export default function ManageAllUsersPage() {
         {/* Organizations Tab */}
         {activeTab === "organizations" && (
           <div>
-            <div className="mb-6">
+            <div className="mb-4 sm:mb-6">
               <input
                 type="text"
                 placeholder="Search by email or name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className={`w-full px-4 py-3 text-xs font-light focus:outline-none ${
+                className={`w-full px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs font-light focus:outline-none ${
                   darkMode
                     ? "bg-[#0a0a0a] border border-[#1a1a1a] text-white placeholder-gray-600"
                     : "bg-white border border-gray-100 text-black placeholder-gray-400"
@@ -561,19 +561,19 @@ export default function ManageAllUsersPage() {
                 darkMode ? "border-[#1a1a1a]" : "border-gray-100"
               }`}>
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  <table className="w-full table-auto">
                     <thead className={`border-b ${darkMode ? "border-[#1a1a1a]" : "border-gray-100"}`}>
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs uppercase tracking-wider font-light">
+                        <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs uppercase tracking-wider font-light whitespace-nowrap">
                           User
                         </th>
-                        <th className="px-6 py-3 text-left text-xs uppercase tracking-wider font-light">
+                        <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs uppercase tracking-wider font-light whitespace-nowrap">
                           Role
                         </th>
-                        <th className="px-6 py-3 text-left text-xs uppercase tracking-wider font-light">
+                        <th className="hidden lg:table-cell px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs uppercase tracking-wider font-light whitespace-nowrap">
                           Organizations
                         </th>
-                        <th className="px-6 py-3 text-left text-xs uppercase tracking-wider font-light">
+                        <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs uppercase tracking-wider font-light whitespace-nowrap">
                           Actions
                         </th>
                       </tr>
@@ -581,31 +581,31 @@ export default function ManageAllUsersPage() {
                     <tbody className={`${darkMode ? "divide-y divide-[#1a1a1a]" : "divide-y divide-gray-100"}`}>
                       {filteredUsers.map((user) => (
                         <tr key={user.id}>
-                          <td className="px-6 py-4">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4">
                             <div>
-                              <div className="text-xs font-light">{user.email}</div>
+                              <div className="text-[10px] sm:text-xs font-light">{user.email}</div>
                               {user.fullName && (
-                                <div className={`text-xs font-light ${darkMode ? "text-gray-600" : "text-gray-400"}`}>
+                                <div className={`text-[10px] sm:text-xs font-light ${darkMode ? "text-gray-600" : "text-gray-400"}`}>
                                   {user.fullName}
                                 </div>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 border text-xs uppercase tracking-wider font-light ${
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
+                            <span className={`px-2 py-1 border text-[10px] sm:text-xs uppercase tracking-wider font-light ${
                               darkMode ? "border-white/20" : "border-black/20"
                             }`}>
                               {user.userType}
                             </span>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="hidden lg:table-cell px-3 sm:px-6 py-3 sm:py-4">
                             <div className="flex flex-wrap gap-1">
                               {(() => {
                                 const orgData = user.organization;
                                 const orgIds = Array.isArray(orgData) ? orgData : orgData ? [orgData] : [];
                                 
                                 if (orgIds.length === 0) {
-                                  return <span className={`text-xs font-light ${darkMode ? "text-gray-600" : "text-gray-400"}`}>None</span>;
+                                  return <span className={`text-[10px] sm:text-xs font-light ${darkMode ? "text-gray-600" : "text-gray-400"}`}>None</span>;
                                 }
                                 
                                 return orgIds.map(orgId => {
@@ -613,7 +613,7 @@ export default function ManageAllUsersPage() {
                                   return (
                                     <span
                                       key={orgId}
-                                      className={`px-2 py-1 border text-xs font-light ${
+                                      className={`px-2 py-1 border text-[10px] sm:text-xs font-light ${
                                         darkMode ? "border-white/20 text-gray-300" : "border-black/20 text-gray-600"
                                       }`}
                                     >
@@ -624,11 +624,11 @@ export default function ManageAllUsersPage() {
                               })()}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                             <button
                               onClick={() => openOrgModal(user)}
                               disabled={processingId === user.id}
-                              className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
+                              className={`px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs uppercase tracking-wider font-light transition whitespace-nowrap ${
                                 processingId === user.id
                                   ? darkMode
                                     ? "border border-gray-600 text-gray-600 cursor-not-allowed"
@@ -648,10 +648,10 @@ export default function ManageAllUsersPage() {
                 </div>
               </div>
             ) : (
-              <div className={`p-8 border text-center ${
+              <div className={`p-6 sm:p-8 border text-center ${
                 darkMode ? "border-[#1a1a1a]" : "border-gray-100"
               }`}>
-                <p className={`text-xs uppercase tracking-wider font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
+                <p className={`text-[10px] sm:text-xs uppercase tracking-wider font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
                   No users found.
                 </p>
               </div>
@@ -663,24 +663,24 @@ export default function ManageAllUsersPage() {
       {/* Organization Modal */}
       {showOrgModal && selectedUser && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className={`border max-w-2xl w-full max-h-[80vh] overflow-y-auto ${
+          <div className={`border max-w-sm sm:max-w-md md:max-w-2xl w-full max-h-[80vh] overflow-y-auto ${
             darkMode ? "bg-[#0a0a0a] border-[#1a1a1a]" : "bg-white border-gray-100"
           }`}>
-            <div className={`sticky top-0 p-6 border-b ${
+            <div className={`sticky top-0 p-4 sm:p-6 border-b ${
               darkMode ? "bg-[#0a0a0a] border-[#1a1a1a]" : "bg-white border-gray-100"
             }`}>
-              <h2 className="text-xs uppercase tracking-wider font-light">Manage Organizations</h2>
-              <p className={`mt-2 text-xs font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
+              <h2 className="text-[10px] sm:text-xs uppercase tracking-wider font-light">Manage Organizations</h2>
+              <p className={`mt-2 text-[10px] sm:text-xs font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
                 {selectedUser.email}
               </p>
             </div>
 
-            <div className="p-6">
-              <div className="space-y-3">
+            <div className="p-4 sm:p-6">
+              <div className="space-y-2 sm:space-y-3">
                 {clubs.map((club) => (
                   <label
                     key={club.id}
-                    className={`flex items-center p-4 border cursor-pointer transition ${
+                    className={`flex items-center p-3 sm:p-4 border cursor-pointer transition ${
                       userOrganizations.includes(club.id)
                         ? darkMode
                           ? "border-white"
@@ -694,13 +694,13 @@ export default function ManageAllUsersPage() {
                       type="checkbox"
                       checked={userOrganizations.includes(club.id)}
                       onChange={() => handleToggleOrganization(club.id)}
-                      className={`mr-3 h-5 w-5 border ${
+                      className={`mr-3 h-4 w-4 sm:h-5 sm:w-5 border ${
                         darkMode ? "border-white" : "border-black"
                       }`}
                     />
                     <div className="flex-1">
-                      <div className="text-xs font-light">{club.name}</div>
-                      <div className={`text-xs font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
+                      <div className="text-[10px] sm:text-xs font-light">{club.name}</div>
+                      <div className={`text-[10px] sm:text-xs font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
                         {club.city}, {club.state}
                       </div>
                     </div>
@@ -709,13 +709,13 @@ export default function ManageAllUsersPage() {
               </div>
             </div>
 
-            <div className={`sticky bottom-0 p-6 border-t flex gap-4 ${
+            <div className={`sticky bottom-0 p-4 sm:p-6 border-t flex flex-col sm:flex-row gap-3 sm:gap-4 ${
               darkMode ? "bg-[#0a0a0a] border-[#1a1a1a]" : "bg-white border-gray-100"
             }`}>
               <button
                 onClick={handleSaveOrganizations}
                 disabled={processingId === selectedUser.id}
-                className={`flex-1 px-4 py-3 text-xs uppercase tracking-wider font-light border transition ${
+                className={`flex-1 px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs uppercase tracking-wider font-light border transition ${
                   processingId === selectedUser.id
                     ? darkMode
                       ? "border-gray-600 text-gray-600 cursor-not-allowed"
@@ -732,7 +732,7 @@ export default function ManageAllUsersPage() {
                   setShowOrgModal(false);
                   setSelectedUser(null);
                 }}
-                className={`px-4 py-3 text-xs uppercase tracking-wider font-light border transition ${
+                className={`flex-1 sm:flex-initial px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs uppercase tracking-wider font-light border transition ${
                   darkMode
                     ? "border-white text-white hover:bg-white hover:text-black"
                     : "border-black text-black hover:bg-black hover:text-white"

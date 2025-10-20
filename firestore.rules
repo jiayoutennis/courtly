@@ -150,6 +150,14 @@ service cloud.firestore {
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['organization', 'updatedAt']) &&
                        request.resource.data.organization is list;
       
+      // Club admins can update userType to promote members to coach or admin
+      // They can set userType to: 'member', 'admin', or 'coach'
+      allow update: if isAuthenticated() &&
+                       hasUserDoc() &&
+                       getUserDoc().userType == 'admin' &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userType', 'updatedAt']) &&
+                       request.resource.data.userType in ['member', 'admin', 'coach'];
+      
       // Courtly admins can read and write all users
       allow read, write: if isCourtlyAdmin();
     }

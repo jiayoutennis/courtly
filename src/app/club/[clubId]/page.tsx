@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { db, auth } from "../../../../firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import PageTitle from "@/app/components/PageTitle";
 
@@ -34,6 +34,7 @@ export default function PublicClubPage() {
   const [isMember, setIsMember] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [coaches, setCoaches] = useState<Array<{id: string; name: string; email: string}>>([]);
 
   // Initialize dark mode
   useEffect(() => {
@@ -145,6 +146,34 @@ export default function PublicClubPage() {
     
     if (clubId) {
       fetchClubData();
+    }
+  }, [clubId]);
+
+  // Fetch coaches for this club
+  useEffect(() => {
+    const fetchCoaches = async () => {
+      try {
+        const q = query(
+          collection(db, "users"),
+          where("userType", "==", "coach"),
+          where("organization", "array-contains", clubId)
+        );
+        
+        const snapshot = await getDocs(q);
+        const coachesData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().name || doc.data().fullName || doc.data().email,
+          email: doc.data().email
+        }));
+        
+        setCoaches(coachesData);
+      } catch (error) {
+        console.error("Error fetching coaches:", error);
+      }
+    };
+
+    if (clubId) {
+      fetchCoaches();
     }
   }, [clubId]);
 
@@ -266,6 +295,34 @@ export default function PublicClubPage() {
             )}
           </div>
         </div>
+        
+        {/* Coaches */}
+        {coaches.length > 0 && (
+          <div className={`p-6 mb-8 border ${
+            darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+          }`}>
+            <h2 className="text-xs uppercase tracking-wider font-light mb-4">Coaches</h2>
+            <div className="space-y-3">
+              {coaches.map(coach => (
+                <div key={coach.id} className="flex items-center gap-3">
+                  <span className={`px-2 py-1 border text-xs font-light ${
+                    darkMode 
+                      ? "border-green-900/50 text-green-400" 
+                      : "border-green-200 text-green-600"
+                  }`}>
+                    COACH
+                  </span>
+                  <div>
+                    <p className="text-xs font-light">{coach.name}</p>
+                    <p className={`text-xs font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
+                      {coach.email}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {/* Website Link */}
         {clubInfo.website && (

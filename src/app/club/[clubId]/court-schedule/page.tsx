@@ -38,6 +38,7 @@ interface Club {
     startTime: string;
     endTime: string;
   };
+  maxAdvanceBookingDays?: number; // Default 30 days if not specified
 }
 
 export default function CourtSchedulePage() {
@@ -64,6 +65,7 @@ export default function CourtSchedulePage() {
     notes: ""
   });
   const [currentUserName, setCurrentUserName] = useState("");
+  const [isCoach, setIsCoach] = useState(false);
   
   const router = useRouter();
   const params = useParams();
@@ -92,11 +94,12 @@ export default function CourtSchedulePage() {
       try {
         setCurrentUserId(user.uid);
         
-        // Get user's name
+        // Get user's name and check if they're a coach
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
           setCurrentUserName(userData.name || user.email || "Member");
+          setIsCoach(userData.userType === "coach");
         }
         
         if (clubId) {
@@ -151,7 +154,8 @@ export default function CourtSchedulePage() {
           } : {
             startTime: "08:00",
             endTime: "20:00"
-          }
+          },
+          maxAdvanceBookingDays: data.maxAdvanceBookingDays || 30
         });
       }
     } catch (error) {
@@ -268,7 +272,7 @@ export default function CourtSchedulePage() {
   const handleSlotClick = (courtId: string, courtName: string, date: string, time: string) => {
     // Check if slot is blocked by any booking (including multi-hour bookings)
     if (isSlotBlocked(courtId, date, time)) {
-      // Find the booking that blocks this slot
+      // Coaches can override existing bookings if needed, but first show the existing booking
       const currentHour = parseInt(time.split(':')[0] || '0');
       const blockingBooking = bookings.find(booking => {
         if (booking.courtId !== courtId || booking.date !== date) {
@@ -284,6 +288,27 @@ export default function CourtSchedulePage() {
         setShowViewModal(true);
       }
       return;
+    }
+
+    // Check if slot is in the past (coaches can book past slots)
+    const isPast = new Date(`${date} ${time}`) < new Date();
+    if (isPast && !isCoach) {
+      setError("Cannot book past time slots");
+      setTimeout(() => setError(""), 3000);
+      return;
+    }
+
+    // Check advance booking day limit (coaches can book beyond limit)
+    if (!isCoach) {
+      const maxAdvanceDays = club?.maxAdvanceBookingDays || 30;
+      const maxDate = addDays(new Date(), maxAdvanceDays);
+      const selectedDateTime = new Date(`${date} ${time}`);
+      
+      if (selectedDateTime > maxDate) {
+        setError(`Cannot book more than ${maxAdvanceDays} days in advance`);
+        setTimeout(() => setError(""), 3000);
+        return;
+      }
     }
 
     // Open booking modal for available slots
@@ -317,9 +342,12 @@ export default function CourtSchedulePage() {
       endTime: newEndTime
     }));
     
-    // Show warning if booking extends beyond operating hours
-    if (endHour > operatingEndHour) {
+    // Show warning if booking extends beyond operating hours (coaches are exempt)
+    if (endHour > operatingEndHour && !isCoach) {
       setError(`Note: Booking extends beyond operating hours (${operatingEndTime}). It will be adjusted when confirmed.`);
+    } else if (endHour > operatingEndHour && isCoach) {
+      setError(`Note: As a coach, you can book beyond operating hours (${operatingEndTime}).`);
+      setTimeout(() => setError(""), 3000);
     } else {
       setError("");
     }
@@ -336,16 +364,35 @@ export default function CourtSchedulePage() {
         return;
       }
 
+      // Check if slot is in the past (coaches can book past slots)
+      const isPast = new Date(`${bookingData.date} ${bookingData.startTime}`) < new Date();
+      if (isPast && !isCoach) {
+        setError("Cannot book past time slots");
+        return;
+      }
+
+      // Check advance booking day limit (coaches can book beyond limit)
+      if (!isCoach) {
+        const maxAdvanceDays = club?.maxAdvanceBookingDays || 30;
+        const maxDate = addDays(new Date(), maxAdvanceDays);
+        const bookingDateTime = new Date(`${bookingData.date} ${bookingData.startTime}`);
+        
+        if (bookingDateTime > maxDate) {
+          setError(`Cannot book more than ${maxAdvanceDays} days in advance`);
+          return;
+        }
+      }
+
       // Get operating hours
       const operatingEndTime = club?.operatingHours?.endTime || "22:00";
       const endHour = parseInt(bookingData.endTime.split(':')[0] || '0');
       const operatingEndHour = parseInt(operatingEndTime.split(':')[0] || '22');
       
-      // Check if booking extends beyond operating hours
+      // Check if booking extends beyond operating hours (coaches are exempt)
       let adjustedEndTime = bookingData.endTime;
       let showWarning = false;
       
-      if (endHour > operatingEndHour) {
+      if (endHour > operatingEndHour && !isCoach) {
         adjustedEndTime = operatingEndTime;
         showWarning = true;
         setError(`Court schedule ends at ${operatingEndTime}. Your booking has been adjusted to end at ${operatingEndTime}.`);
@@ -479,30 +526,50 @@ export default function CourtSchedulePage() {
       <PageTitle title="Court Schedule - Courtly" />
       
       {/* Minimalist Header */}
-      <header className={`py-6 px-6 ${
+      <header className={`py-4 sm:py-6 px-4 sm:px-6 ${
         darkMode ? "" : "border-b border-gray-100"
       }`}>
         <div className="max-w-7xl mx-auto">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
             <div>
-              <h1 className={`text-3xl font-light tracking-tight ${
+              <h1 className={`text-xl sm:text-2xl md:text-3xl font-light tracking-tight ${
                 darkMode ? "text-white" : "text-gray-900"
               }`}>
                 Court Schedule
               </h1>
               {club && (
-                <p className={`mt-1 text-sm font-light ${
+                <p className={`mt-1 text-xs sm:text-sm font-light ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   {club.name}
                 </p>
               )}
+              {isCoach && (
+                <span className={`mt-2 inline-flex items-center px-2 py-1 text-xs font-light border ${
+                  darkMode ? "border-green-900/50 text-green-400" : "border-green-200 text-green-600"
+                }`}>
+                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Coach - Unrestricted Booking
+                </span>
+              )}
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
               <Link
+                href="/dashboard"
+                className={`text-xs sm:text-sm font-light ${
+                  darkMode
+                    ? "text-gray-400 hover:text-white"
+                    : "text-gray-500 hover:text-gray-900"
+                } transition-colors`}
+              >
+                Dashboard
+              </Link>
+              <Link
                 href={`/club/${clubId}`}
-                className={`text-sm font-light ${
+                className={`text-xs sm:text-sm font-light ${
                   darkMode
                     ? "text-gray-400 hover:text-white"
                     : "text-gray-500 hover:text-gray-900"
@@ -515,10 +582,10 @@ export default function CourtSchedulePage() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Messages - Minimalist */}
         {error && (
-          <div className={`mb-6 p-4 text-sm font-light ${
+          <div className={`mb-4 sm:mb-6 p-3 sm:p-4 text-xs sm:text-sm font-light ${
             darkMode ? "text-red-400" : "text-red-600"
           }`}>
             {error}
@@ -526,7 +593,7 @@ export default function CourtSchedulePage() {
         )}
 
         {success && (
-          <div className={`mb-6 p-4 text-sm font-light ${
+          <div className={`mb-4 sm:mb-6 p-3 sm:p-4 text-xs sm:text-sm font-light ${
             darkMode ? "text-green-400" : "text-green-600"
           }`}>
             {success}
@@ -534,8 +601,8 @@ export default function CourtSchedulePage() {
         )}
 
         {/* Minimalist Day Navigation */}
-        <div className="mb-8 flex items-center justify-between">
-          <div className="flex items-center gap-1">
+        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-0">
+          <div className="flex items-center justify-center sm:justify-start gap-1">
             <button
               onClick={handlePreviousDay}
               className={`p-2 transition-colors ${
@@ -545,13 +612,13 @@ export default function CourtSchedulePage() {
               }`}
               title="Previous day"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <button
               onClick={handleToday}
-              className={`px-4 py-2 text-sm font-light transition-colors ${
+              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-light transition-colors ${
                 darkMode
                   ? "text-gray-400 hover:text-white"
                   : "text-gray-500 hover:text-gray-900"
@@ -568,15 +635,15 @@ export default function CourtSchedulePage() {
               }`}
               title="Next day"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
               </svg>
             </button>
           </div>
           
           {/* Date Display with Calendar */}
-          <div className="relative flex items-center gap-3 date-picker-container">
-            <div className={`text-sm font-light ${
+          <div className="relative flex items-center justify-center sm:justify-end gap-2 sm:gap-3 date-picker-container">
+            <div className={`text-xs sm:text-sm font-light ${
               darkMode ? "text-gray-400" : "text-gray-500"
             }`}>
               {format(selectedDate, 'EEEE, MMMM d, yyyy')}
@@ -597,14 +664,14 @@ export default function CourtSchedulePage() {
             
             {/* Minimalist Date Picker */}
             {showDatePicker && (
-              <div className={`absolute top-full right-0 mt-3 p-4 rounded-lg shadow-2xl z-50 ${
+              <div className={`absolute top-full right-0 mt-3 p-3 sm:p-4 rounded-lg shadow-2xl z-50 ${
                 darkMode ? "bg-[#1a1a1a]" : "bg-white border border-gray-100"
               }`}>
                 <input
                   type="date"
                   value={format(selectedDate, 'yyyy-MM-dd')}
                   onChange={(e) => handleDateInputChange(e.target.value)}
-                  className={`px-3 py-2 text-sm font-light cursor-pointer ${
+                  className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-light cursor-pointer ${
                     darkMode 
                       ? "bg-[#0a0a0a] text-gray-300" 
                       : "bg-white text-gray-900 border border-gray-200"
@@ -623,9 +690,9 @@ export default function CourtSchedulePage() {
             <div className="min-w-full">
               {/* Header - Courts */}
               <div className={`grid gap-px ${darkMode ? "bg-[#1a1a1a]" : "bg-gray-100"}`} style={{
-                gridTemplateColumns: `120px repeat(${courts.length}, minmax(150px, 1fr))`
+                gridTemplateColumns: `80px repeat(${courts.length}, minmax(120px, 1fr))`
               }}>
-                <div className={`px-3 py-4 text-xs font-light tracking-wide ${
+                <div className={`px-2 sm:px-3 py-3 sm:py-4 text-[10px] sm:text-xs font-light tracking-wide ${
                   darkMode ? "text-gray-600 bg-[#0a0a0a]" : "text-gray-400 bg-white"
                 }`}>
                   TIME
@@ -633,16 +700,16 @@ export default function CourtSchedulePage() {
                 {courts.map((court) => (
                   <div
                     key={court.id}
-                    className={`px-3 py-4 text-center ${
+                    className={`px-2 sm:px-3 py-3 sm:py-4 text-center ${
                       darkMode ? "bg-[#0a0a0a]" : "bg-white"
                     }`}
                   >
-                    <div className={`text-sm font-light ${
+                    <div className={`text-xs sm:text-sm font-light ${
                       darkMode ? "text-white" : "text-gray-900"
                     }`}>
                       {court.name}
                     </div>
-                    <div className={`text-xs mt-1 ${
+                    <div className={`text-[10px] sm:text-xs mt-1 ${
                       darkMode ? "text-gray-600" : "text-gray-500"
                     }`}>
                       {court.courtType}
@@ -658,7 +725,7 @@ export default function CourtSchedulePage() {
                     gridTemplateColumns: `120px repeat(${courts.length}, minmax(150px, 1fr))`
                   }}>
                     {/* Time Label */}
-                    <div className={`px-3 py-4 text-xs font-light flex items-center ${
+                    <div className={`px-2 sm:px-3 py-3 sm:py-4 text-[10px] sm:text-xs font-light flex items-center ${
                       darkMode ? "text-gray-600 bg-[#0a0a0a]" : "text-gray-400 bg-white"
                     }`}>
                       {time}
@@ -675,7 +742,7 @@ export default function CourtSchedulePage() {
                         <div
                           key={`${court.id}-${time}`}
                           onClick={() => handleSlotClick(court.id, court.name, dateStr, time)}
-                          className={`relative h-16 transition-colors ${
+                          className={`relative h-14 sm:h-16 transition-colors ${
                             darkMode ? "bg-[#0a0a0a]" : "bg-white"
                           } ${
                             isPast 
@@ -693,24 +760,24 @@ export default function CourtSchedulePage() {
                         >
                           {booking && booking.startTime === time && (
                             <div
-                              className={`absolute inset-x-1 top-1 rounded px-2 py-1.5 z-10 ${
+                              className={`absolute inset-x-1 top-1 rounded px-1.5 sm:px-2 py-1 sm:py-1.5 z-10 ${
                                 booking.userId === currentUserId 
                                   ? "bg-black text-white"
                                   : "bg-black text-white"
                               }`}
                               style={{
                                 height: `${calculateBookingHeight(booking.startTime, booking.endTime) * 1 - 8}px`,
-                                minHeight: '48px'
+                                minHeight: '40px'
                               }}
                             >
-                              <div className="text-xs font-light truncate">
+                              <div className="text-[10px] sm:text-xs font-light truncate">
                                 {booking.userName}
                               </div>
-                              <div className="text-[10px] opacity-60 mt-0.5">
+                              <div className="text-[9px] sm:text-[10px] opacity-60 mt-0.5">
                                 {booking.startTime} – {booking.endTime}
                               </div>
                               {booking.notes && (
-                                <div className="text-[10px] opacity-80 mt-1 truncate italic">
+                                <div className="text-[9px] sm:text-[10px] opacity-80 mt-1 truncate italic">
                                   {booking.notes}
                                 </div>
                               )}
@@ -740,7 +807,7 @@ export default function CourtSchedulePage() {
         </div>
 
         {/* Minimalist Legend */}
-        <div className={`mt-6 flex items-center gap-6 text-xs font-light ${
+        <div className={`mt-4 sm:mt-6 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-6 text-[10px] sm:text-xs font-light ${
           darkMode ? "text-gray-500" : "text-gray-400"
         }`}>
           <div className="flex items-center gap-2">
@@ -757,24 +824,24 @@ export default function CourtSchedulePage() {
       {/* Booking Modal */}
       {showBookingModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className={`max-w-md w-full rounded-lg p-6 ${
+          <div className={`max-w-sm sm:max-w-md w-full rounded-lg p-4 sm:p-6 ${
             darkMode ? "bg-[#1a1a1a]" : "bg-white"
           }`}>
-            <h2 className={`text-xl font-light mb-4 ${
+            <h2 className={`text-lg sm:text-xl font-light mb-3 sm:mb-4 ${
               darkMode ? "text-white" : "text-gray-900"
             }`}>
               Book Court
             </h2>
 
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {/* Court Info */}
               <div>
-                <label className={`text-xs font-light ${
+                <label className={`text-[10px] sm:text-xs font-light ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   Court
                 </label>
-                <div className={`text-sm font-light ${
+                <div className={`text-xs sm:text-sm font-light ${
                   darkMode ? "text-white" : "text-gray-900"
                 }`}>
                   {bookingData.courtName}
@@ -783,12 +850,12 @@ export default function CourtSchedulePage() {
 
               {/* Date */}
               <div>
-                <label className={`text-xs font-light ${
+                <label className={`text-[10px] sm:text-xs font-light ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   Date
                 </label>
-                <div className={`text-sm font-light ${
+                <div className={`text-xs sm:text-sm font-light ${
                   darkMode ? "text-white" : "text-gray-900"
                 }`}>
                   {format(new Date(bookingData.date), 'EEEE, MMMM d, yyyy')}
@@ -797,12 +864,12 @@ export default function CourtSchedulePage() {
 
               {/* Start Time */}
               <div>
-                <label className={`text-xs font-light ${
+                <label className={`text-[10px] sm:text-xs font-light ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   Start Time
                 </label>
-                <div className={`text-sm font-light ${
+                <div className={`text-xs sm:text-sm font-light ${
                   darkMode ? "text-white" : "text-gray-900"
                 }`}>
                   {bookingData.startTime}
@@ -811,7 +878,7 @@ export default function CourtSchedulePage() {
 
               {/* Duration */}
               <div>
-                <label className={`block text-xs font-light mb-2 ${
+                <label className={`block text-[10px] sm:text-xs font-light mb-2 ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   Duration
@@ -821,7 +888,7 @@ export default function CourtSchedulePage() {
                     <button
                       key={hours}
                       onClick={() => handleDurationChange(hours)}
-                      className={`flex-1 px-3 py-2 text-sm font-light rounded transition-colors ${
+                      className={`flex-1 px-2 sm:px-3 py-2 text-xs sm:text-sm font-light rounded transition-colors ${
                         bookingData.duration === hours
                           ? darkMode
                             ? "bg-white text-black"
@@ -839,12 +906,12 @@ export default function CourtSchedulePage() {
 
               {/* End Time */}
               <div>
-                <label className={`text-xs font-light ${
+                <label className={`text-[10px] sm:text-xs font-light ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   End Time
                 </label>
-                <div className={`text-sm font-light ${
+                <div className={`text-xs sm:text-sm font-light ${
                   darkMode ? "text-white" : "text-gray-900"
                 }`}>
                   {bookingData.endTime}
@@ -853,7 +920,7 @@ export default function CourtSchedulePage() {
 
               {/* Notes */}
               <div>
-                <label className={`block text-xs font-light mb-2 ${
+                <label className={`block text-[10px] sm:text-xs font-light mb-2 ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   Notes (Optional)
@@ -863,7 +930,7 @@ export default function CourtSchedulePage() {
                   onChange={(e) => setBookingData(prev => ({ ...prev, notes: e.target.value }))}
                   placeholder="Add any notes about this booking..."
                   rows={3}
-                  className={`w-full px-3 py-2 text-sm font-light rounded transition-colors resize-none ${
+                  className={`w-full px-2 sm:px-3 py-2 text-xs sm:text-sm font-light rounded transition-colors resize-none ${
                     darkMode
                       ? "bg-[#0a0a0a] text-white placeholder-gray-600 border border-gray-800 focus:border-gray-700"
                       : "bg-white text-gray-900 placeholder-gray-400 border border-gray-200 focus:border-gray-300"
@@ -873,10 +940,10 @@ export default function CourtSchedulePage() {
             </div>
 
             {/* Actions */}
-            <div className="flex gap-3 mt-6">
+            <div className="flex flex-col sm:flex-row gap-3 mt-4 sm:mt-6">
               <button
                 onClick={() => setShowBookingModal(false)}
-                className={`flex-1 px-4 py-2 text-sm font-light rounded transition-colors ${
+                className={`flex-1 px-3 sm:px-4 py-2 text-xs sm:text-sm font-light rounded transition-colors ${
                   darkMode
                     ? "bg-[#0a0a0a] text-gray-400 hover:text-white"
                     : "bg-gray-100 text-gray-600 hover:text-gray-900"
@@ -886,7 +953,7 @@ export default function CourtSchedulePage() {
               </button>
               <button
                 onClick={handleConfirmBooking}
-                className={`flex-1 px-4 py-2 text-sm font-light rounded transition-colors ${
+                className={`flex-1 px-3 sm:px-4 py-2 text-xs sm:text-sm font-light rounded transition-colors ${
                   darkMode
                     ? "bg-white text-black hover:bg-gray-100"
                     : "bg-black text-white hover:bg-gray-800"
@@ -902,24 +969,24 @@ export default function CourtSchedulePage() {
       {/* View Booking Modal */}
       {showViewModal && selectedBooking && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className={`max-w-md w-full rounded-lg p-6 ${
+          <div className={`max-w-sm sm:max-w-md w-full rounded-lg p-4 sm:p-6 ${
             darkMode ? "bg-[#1a1a1a]" : "bg-white"
           }`}>
-            <h2 className={`text-xl font-light mb-4 ${
+            <h2 className={`text-lg sm:text-xl font-light mb-3 sm:mb-4 ${
               darkMode ? "text-white" : "text-gray-900"
             }`}>
               Booking Details
             </h2>
 
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {/* Court Info */}
               <div>
-                <label className={`text-xs font-light ${
+                <label className={`text-[10px] sm:text-xs font-light ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   Court
                 </label>
-                <div className={`text-sm font-light ${
+                <div className={`text-xs sm:text-sm font-light ${
                   darkMode ? "text-white" : "text-gray-900"
                 }`}>
                   {courts.find(c => c.id === selectedBooking.courtId)?.name || "Court"}
@@ -928,12 +995,12 @@ export default function CourtSchedulePage() {
 
               {/* Date */}
               <div>
-                <label className={`text-xs font-light ${
+                <label className={`text-[10px] sm:text-xs font-light ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   Date
                 </label>
-                <div className={`text-sm font-light ${
+                <div className={`text-xs sm:text-sm font-light ${
                   darkMode ? "text-white" : "text-gray-900"
                 }`}>
                   {format(new Date(selectedBooking.date), 'EEEE, MMMM d, yyyy')}
@@ -942,12 +1009,12 @@ export default function CourtSchedulePage() {
 
               {/* Time */}
               <div>
-                <label className={`text-xs font-light ${
+                <label className={`text-[10px] sm:text-xs font-light ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   Time
                 </label>
-                <div className={`text-sm font-light ${
+                <div className={`text-xs sm:text-sm font-light ${
                   darkMode ? "text-white" : "text-gray-900"
                 }`}>
                   {selectedBooking.startTime} – {selectedBooking.endTime}
@@ -956,17 +1023,17 @@ export default function CourtSchedulePage() {
 
               {/* Booked By */}
               <div>
-                <label className={`text-xs font-light ${
+                <label className={`text-[10px] sm:text-xs font-light ${
                   darkMode ? "text-gray-500" : "text-gray-400"
                 }`}>
                   Booked By
                 </label>
-                <div className={`text-sm font-light ${
+                <div className={`text-xs sm:text-sm font-light ${
                   darkMode ? "text-white" : "text-gray-900"
                 }`}>
                   {selectedBooking.userName}
                   {selectedBooking.userId === currentUserId && (
-                    <span className={`ml-2 text-xs ${
+                    <span className={`ml-2 text-[10px] sm:text-xs ${
                       darkMode ? "text-gray-500" : "text-gray-400"
                     }`}>
                       (You)
@@ -978,12 +1045,12 @@ export default function CourtSchedulePage() {
               {/* Notes */}
               {selectedBooking.notes && (
                 <div>
-                  <label className={`text-xs font-light ${
+                  <label className={`text-[10px] sm:text-xs font-light ${
                     darkMode ? "text-gray-500" : "text-gray-400"
                   }`}>
                     Notes
                   </label>
-                  <div className={`text-sm font-light ${
+                  <div className={`text-xs sm:text-sm font-light ${
                     darkMode ? "text-white" : "text-gray-900"
                   }`}>
                     {selectedBooking.notes}
@@ -993,13 +1060,13 @@ export default function CourtSchedulePage() {
             </div>
 
             {/* Actions */}
-            <div className="flex gap-3 mt-6">
+            <div className="flex flex-col sm:flex-row gap-3 mt-4 sm:mt-6">
               <button
                 onClick={() => {
                   setShowViewModal(false);
                   setSelectedBooking(null);
                 }}
-                className={`flex-1 px-4 py-2 text-sm font-light rounded transition-colors ${
+                className={`flex-1 px-3 sm:px-4 py-2 text-xs sm:text-sm font-light rounded transition-colors ${
                   darkMode
                     ? "bg-[#0a0a0a] text-gray-400 hover:text-white"
                     : "bg-gray-100 text-gray-600 hover:text-gray-900"
@@ -1010,7 +1077,7 @@ export default function CourtSchedulePage() {
               {selectedBooking.userId === currentUserId && (
                 <button
                   onClick={handleCancelBooking}
-                  className={`flex-1 px-4 py-2 text-sm font-light rounded transition-colors ${
+                  className={`flex-1 px-3 sm:px-4 py-2 text-xs sm:text-sm font-light rounded transition-colors ${
                     darkMode
                       ? "bg-red-600 text-white hover:bg-red-700"
                       : "bg-red-500 text-white hover:bg-red-600"

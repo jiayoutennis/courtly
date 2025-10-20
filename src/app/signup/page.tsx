@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth, db } from '../../../firebase';
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import PageTitle from '@/app/components/PageTitle';
 import DarkModeToggle from '@/app/components/DarkModeToggle';
@@ -108,12 +108,15 @@ export default function SignUpPage() {
         organization: [] // Kept for backward compatibility
       });
       
-      setSuccess('Account created successfully! Redirecting to dashboard...');
+      // Send email verification
+      await sendEmailVerification(user);
       
-      // Redirect to dashboard after successful signup
+      setSuccess('Account created successfully! Please check your email to verify your account.');
+      
+      // Redirect to a verification pending page or sign-in page
       setTimeout(() => {
-        router.push('/dashboard');
-      }, 1500);
+        router.push('/signin?verification=pending');
+      }, 3000);
       
     } catch (err: any) {
       console.error('Sign up error:', err);

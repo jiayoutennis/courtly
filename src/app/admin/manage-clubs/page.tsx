@@ -507,17 +507,17 @@ export default function ManageClubsPage() {
       <header className={`border-b transition-colors duration-300 ${
         darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'
       }`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-6">
-            <Link href="/" className="text-lg font-light">Courtly</Link>
-            <span className={`text-sm font-light ${darkMode ? 'text-gray-600' : 'text-gray-400'}`}>/</span>
-            <h1 className="text-sm font-light">Manage Clubs</h1>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-0 sm:h-16 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
+          <div className="flex items-center space-x-3 sm:space-x-6">
+            <Link href="/" className="text-base sm:text-lg font-light">Courtly</Link>
+            <span className={`hidden sm:inline text-sm font-light ${darkMode ? 'text-gray-600' : 'text-gray-400'}`}>/</span>
+            <h1 className="text-xs sm:text-sm font-light">Manage Clubs</h1>
           </div>
           
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3 sm:space-x-4 w-full sm:w-auto justify-between sm:justify-end">
             <Link 
               href="/dashboard" 
-              className={`text-sm font-light transition-colors duration-200 ${
+              className={`text-xs sm:text-sm font-light transition-colors duration-200 ${
                 darkMode ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-black'
               }`}
             >
@@ -540,7 +540,7 @@ export default function ManageClubsPage() {
                 </svg>
               )}
             </button>
-            <div className={`px-3 py-1 border text-xs font-light uppercase tracking-wider ${
+            <div className={`px-2 sm:px-3 py-1 border text-[10px] sm:text-xs font-light uppercase tracking-wider ${
               darkMode ? "border-[#1a1a1a]" : "border-gray-200"
             }`}>
               Courtly Staff
@@ -549,10 +549,10 @@ export default function ManageClubsPage() {
         </div>
       </header>
       
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 md:py-12">
         {/* Alert messages */}
         {error && (
-          <div className={`mb-8 p-4 border font-light text-sm ${
+          <div className={`mb-6 sm:mb-8 p-3 sm:p-4 border font-light text-xs sm:text-sm ${
             darkMode 
               ? 'border-red-900/50 bg-red-950/20 text-red-400' 
               : 'border-red-200 bg-red-50 text-red-600'
@@ -562,7 +562,7 @@ export default function ManageClubsPage() {
         )}
         
         {success && (
-          <div className={`mb-8 p-4 border font-light text-sm ${
+          <div className={`mb-6 sm:mb-8 p-3 sm:p-4 border font-light text-xs sm:text-sm ${
             darkMode 
               ? 'border-green-900/50 bg-green-950/20 text-green-400' 
               : 'border-green-200 bg-green-50 text-green-600'
@@ -572,15 +572,15 @@ export default function ManageClubsPage() {
         )}
         
         {/* Add/Edit Club Form */}
-        <div className={`mb-12 p-8 border ${
+        <div className={`mb-8 sm:mb-12 p-4 sm:p-6 md:p-8 border ${
           darkMode ? "border-[#1a1a1a]" : "border-gray-100"
         }`}>
-          <h2 className="text-xl font-light mb-8">
+          <h2 className="text-lg sm:text-xl font-light mb-6 sm:mb-8">
             {isEditing ? `Edit Club: ${selectedClub?.name}` : "Add New Club"}
           </h2>
           
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               {/* Club Name */}
               <div>
                 <label htmlFor="name" className={`block text-xs font-light uppercase tracking-wider mb-2 ${
@@ -903,12 +903,12 @@ export default function ManageClubsPage() {
             </div>
             
             {/* Form Actions */}
-            <div className="flex items-center justify-end space-x-4 pt-6">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 sm:gap-4 pt-4 sm:pt-6">
               {isEditing && (
                 <button
                   type="button"
                   onClick={resetForm}
-                  className={`px-6 py-3 border font-light text-sm transition-colors duration-200 ${
+                  className={`px-4 sm:px-6 py-3 border font-light text-xs sm:text-sm transition-colors duration-200 ${
                     darkMode 
                       ? 'border-[#1a1a1a] hover:border-gray-600' 
                       : 'border-gray-200 hover:border-gray-300'
@@ -920,7 +920,7 @@ export default function ManageClubsPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className={`px-6 py-3 font-light text-sm transition-colors duration-200 ${
+                className={`px-4 sm:px-6 py-3 font-light text-xs sm:text-sm transition-colors duration-200 ${
                   darkMode
                     ? submitting ? 'bg-gray-800 text-gray-500' : 'bg-white text-black hover:bg-gray-100'
                     : submitting ? 'bg-gray-200 text-gray-400' : 'bg-black text-white hover:bg-gray-900'
@@ -941,12 +941,12 @@ export default function ManageClubsPage() {
         <div className={`border ${
           darkMode ? "border-[#1a1a1a]" : "border-gray-100"
         }`}>
-          <div className={`px-6 py-4 border-b flex justify-between items-center ${
+          <div className={`px-4 sm:px-6 py-3 sm:py-4 border-b flex justify-between items-center ${
             darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'
           }`}>
-            <h2 className="text-sm font-light uppercase tracking-wider">
+            <h2 className="text-xs sm:text-sm font-light uppercase tracking-wider">
               Clubs Directory ({clubs.length})
-              {fetchingClubs && <span className="ml-2 text-xs">(Loading...)</span>}
+              {fetchingClubs && <span className="ml-2 text-[10px] sm:text-xs">(Loading...)</span>}
             </h2>
             <button 
               onClick={fetchClubs}
@@ -965,42 +965,42 @@ export default function ManageClubsPage() {
           </div>
           
           {clubs.length === 0 ? (
-            <div className="p-12 text-center">
-              <p className={`font-light ${darkMode ? "text-gray-600" : "text-gray-400"}`}>
+            <div className="p-8 sm:p-12 text-center">
+              <p className={`text-sm font-light ${darkMode ? "text-gray-600" : "text-gray-400"}`}>
                 No clubs added yet. Add your first club using the form above.
               </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full">
+              <table className="min-w-full table-auto">{/* Mobile: Allow horizontal scroll */}
                 <thead className={darkMode ? "bg-[#0a0a0a]" : "bg-white"}>
                   <tr>
-                    <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                    <th scope="col" className={`px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs font-light uppercase tracking-wider whitespace-nowrap ${
                       darkMode ? 'text-gray-600' : 'text-gray-400'
                     }`}>
                       Club Name
                     </th>
-                    <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                    <th scope="col" className={`px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs font-light uppercase tracking-wider whitespace-nowrap ${
                       darkMode ? 'text-gray-600' : 'text-gray-400'
                     }`}>
                       Location
                     </th>
-                    <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                    <th scope="col" className={`px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs font-light uppercase tracking-wider whitespace-nowrap ${
                       darkMode ? 'text-gray-600' : 'text-gray-400'
                     }`}>
                       Courts
                     </th>
-                    <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                    <th scope="col" className={`hidden lg:table-cell px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs font-light uppercase tracking-wider whitespace-nowrap ${
                       darkMode ? 'text-gray-600' : 'text-gray-400'
                     }`}>
                       Assigned Admins
                     </th>
-                    <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                    <th scope="col" className={`px-3 sm:px-6 py-3 sm:py-4 text-left text-[10px] sm:text-xs font-light uppercase tracking-wider whitespace-nowrap ${
                       darkMode ? 'text-gray-600' : 'text-gray-400'
                     }`}>
                       Status
                     </th>
-                    <th scope="col" className={`px-6 py-4 text-right text-xs font-light uppercase tracking-wider ${
+                    <th scope="col" className={`px-3 sm:px-6 py-3 sm:py-4 text-right text-[10px] sm:text-xs font-light uppercase tracking-wider whitespace-nowrap ${
                       darkMode ? 'text-gray-600' : 'text-gray-400'
                     }`}>
                       Actions
@@ -1014,33 +1014,33 @@ export default function ManageClubsPage() {
                     <tr key={club.id} className={`transition-colors duration-200 ${
                       darkMode ? "hover:bg-[#0f0f0f]" : "hover:bg-gray-50"
                     }`}>
-                      <td className="px-6 py-4">
-                        <div className="font-light">{club.name}</div>
-                        <div className={`text-sm font-light ${
+                      <td className="px-3 sm:px-6 py-3 sm:py-4">
+                        <div className="font-light text-xs sm:text-sm">{club.name}</div>
+                        <div className={`text-[10px] sm:text-xs font-light ${
                           darkMode ? "text-gray-600" : "text-gray-400"
                         }`}>{club.email}</div>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="font-light">{club.city}, {club.state}</div>
-                        {club.zip && <div className={`text-sm font-light ${
+                      <td className="px-3 sm:px-6 py-3 sm:py-4">
+                        <div className="font-light text-xs sm:text-sm">{club.city}, {club.state}</div>
+                        {club.zip && <div className={`text-[10px] sm:text-xs font-light ${
                           darkMode ? "text-gray-600" : "text-gray-400"
                         }`}>{club.zip}</div>}
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="font-light">{club.courts} {club.courts === 1 ? 'court' : 'courts'}</div>
-                        <div className={`text-sm font-light capitalize ${
+                      <td className="px-3 sm:px-6 py-3 sm:py-4">
+                        <div className="font-light text-xs sm:text-sm">{club.courts} {club.courts === 1 ? 'court' : 'courts'}</div>
+                        <div className={`text-[10px] sm:text-xs font-light capitalize ${
                           darkMode ? "text-gray-600" : "text-gray-400"
                         }`}>
-                          {club.courtType} surface
+                          {club.courtType}
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="hidden lg:table-cell px-3 sm:px-6 py-3 sm:py-4">
                         {club.assignedAdmins && club.assignedAdmins.length > 0 ? (
                           <div>
-                            <div className="font-light text-sm">
+                            <div className="font-light text-xs sm:text-sm">
                               {club.assignedAdmins.length} admin{club.assignedAdmins.length !== 1 ? 's' : ''}
                             </div>
-                            <div className={`text-xs font-light ${
+                            <div className={`text-[10px] sm:text-xs font-light ${
                               darkMode ? "text-gray-600" : "text-gray-400"
                             }`}>
                               {users
@@ -1052,15 +1052,15 @@ export default function ManageClubsPage() {
                             </div>
                           </div>
                         ) : (
-                          <span className={`text-sm font-light ${
+                          <span className={`text-xs sm:text-sm font-light ${
                             darkMode ? "text-gray-600" : "text-gray-400"
                           }`}>
                             None
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-3 py-1 border text-xs font-light uppercase tracking-wider ${
+                      <td className="px-3 sm:px-6 py-3 sm:py-4">
+                        <span className={`px-2 sm:px-3 py-1 border text-[10px] sm:text-xs font-light uppercase tracking-wider whitespace-nowrap ${
                           club.approved
                             ? (darkMode ? "border-green-900/50 text-green-400" : "border-green-200 text-green-600")
                             : (darkMode ? "border-yellow-900/50 text-yellow-400" : "border-yellow-200 text-yellow-600")
@@ -1068,11 +1068,11 @@ export default function ManageClubsPage() {
                           {club.approved ? "Approved" : "Pending"}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right text-sm font-light whitespace-nowrap">
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-right text-[10px] sm:text-xs font-light whitespace-nowrap">
                         {!club.approved && (
                           <button
                             onClick={() => club.id && approveClub(club.id, club.name)}
-                            className={`mr-4 underline hover:no-underline transition-colors duration-200 ${
+                            className={`mr-2 sm:mr-4 underline hover:no-underline transition-colors duration-200 ${
                               darkMode ? "text-green-400" : "text-green-600"
                             }`}
                           >
@@ -1081,7 +1081,7 @@ export default function ManageClubsPage() {
                         )}
                         <button
                           onClick={() => editClub(club)}
-                          className="mr-4 underline hover:no-underline transition-colors duration-200"
+                          className="mr-2 sm:mr-4 underline hover:no-underline transition-colors duration-200"
                         >
                           Edit
                         </button>
@@ -1104,11 +1104,11 @@ export default function ManageClubsPage() {
       </div>
       
       {/* Footer */}
-      <footer className={`border-t py-6 mt-12 transition-colors duration-300 ${
+      <footer className={`border-t py-4 sm:py-6 mt-8 sm:mt-12 transition-colors duration-300 ${
         darkMode ? 'border-[#1a1a1a] text-gray-600' : 'border-gray-100 text-gray-400'
       }`}>
-        <div className="text-center">
-          <p className="text-xs font-light">
+        <div className="text-center px-4">
+          <p className="text-[10px] sm:text-xs font-light">
             © {new Date().getFullYear()} Courtly by JiaYou Tennis. All rights reserved.
           </p>
         </div>
