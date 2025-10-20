@@ -66,16 +66,29 @@ export default function CourtSchedulePage() {
   });
   const [currentUserName, setCurrentUserName] = useState("");
   const [isCoach, setIsCoach] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   
   const router = useRouter();
   const params = useParams();
   const clubId = params?.clubId as string;
 
-  // Generate time slots from 6:00 AM to 10:00 PM (every hour)
-  const timeSlots = Array.from({ length: 17 }, (_, i) => {
-    const hour = i + 6;
-    return `${hour.toString().padStart(2, '0')}:00`;
-  });
+  // Generate time slots based on club operating hours (default 6:00 AM to 10:00 PM)
+  const generateTimeSlots = () => {
+    const startHour = club?.operatingHours?.startTime 
+      ? parseInt(club.operatingHours.startTime.split(':')[0] || '6') 
+      : 6;
+    const endHour = club?.operatingHours?.endTime 
+      ? parseInt(club.operatingHours.endTime.split(':')[0] || '22') 
+      : 22;
+    
+    const slots = [];
+    for (let hour = startHour; hour <= endHour; hour++) {
+      slots.push(`${hour.toString().padStart(2, '0')}:00`);
+    }
+    return slots;
+  };
+
+  const timeSlots = generateTimeSlots();
 
   useEffect(() => {
     const savedMode = localStorage.getItem("darkMode");
@@ -94,12 +107,13 @@ export default function CourtSchedulePage() {
       try {
         setCurrentUserId(user.uid);
         
-        // Get user's name and check if they're a coach
+        // Get user's name and check if they're a coach or admin
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
           setCurrentUserName(userData.name || user.email || "Member");
           setIsCoach(userData.userType === "coach");
+          setIsAdmin(userData.userType === "admin");
         }
         
         if (clubId) {
@@ -231,6 +245,10 @@ export default function CourtSchedulePage() {
 
   const handlePreviousDay = () => {
     const newDate = addDays(selectedDate, -1);
+    // Don't allow going before today (unless admin/coach)
+    if (!isCoach && !isAdmin && newDate < new Date(new Date().setHours(0, 0, 0, 0))) {
+      return;
+    }
     setSelectedDate(newDate);
     if (clubId) {
       fetchBookings(clubId);
@@ -239,6 +257,13 @@ export default function CourtSchedulePage() {
 
   const handleNextDay = () => {
     const newDate = addDays(selectedDate, 1);
+    // Don't allow going beyond max advance booking days (unless admin/coach)
+    if (!isCoach && !isAdmin) {
+      const maxDate = addDays(new Date(), club?.maxAdvanceBookingDays || 30);
+      if (newDate > maxDate) {
+        return;
+      }
+    }
     setSelectedDate(newDate);
     if (clubId) {
       fetchBookings(clubId);
@@ -272,7 +297,7 @@ export default function CourtSchedulePage() {
   const handleSlotClick = (courtId: string, courtName: string, date: string, time: string) => {
     // Check if slot is blocked by any booking (including multi-hour bookings)
     if (isSlotBlocked(courtId, date, time)) {
-      // Coaches can override existing bookings if needed, but first show the existing booking
+      // Coaches and admins can override existing bookings if needed, but first show the existing booking
       const currentHour = parseInt(time.split(':')[0] || '0');
       const blockingBooking = bookings.find(booking => {
         if (booking.courtId !== courtId || booking.date !== date) {
@@ -290,16 +315,16 @@ export default function CourtSchedulePage() {
       return;
     }
 
-    // Check if slot is in the past (coaches can book past slots)
+    // Check if slot is in the past (coaches and admins can book past slots)
     const isPast = new Date(`${date} ${time}`) < new Date();
-    if (isPast && !isCoach) {
+    if (isPast && !isCoach && !isAdmin) {
       setError("Cannot book past time slots");
       setTimeout(() => setError(""), 3000);
       return;
     }
 
-    // Check advance booking day limit (coaches can book beyond limit)
-    if (!isCoach) {
+    // Check advance booking day limit (coaches and admins can book beyond limit)
+    if (!isCoach && !isAdmin) {
       const maxAdvanceDays = club?.maxAdvanceBookingDays || 30;
       const maxDate = addDays(new Date(), maxAdvanceDays);
       const selectedDateTime = new Date(`${date} ${time}`);
@@ -342,11 +367,11 @@ export default function CourtSchedulePage() {
       endTime: newEndTime
     }));
     
-    // Show warning if booking extends beyond operating hours (coaches are exempt)
-    if (endHour > operatingEndHour && !isCoach) {
+    // Show warning if booking extends beyond operating hours (coaches and admins are exempt)
+    if (endHour > operatingEndHour && !isCoach && !isAdmin) {
       setError(`Note: Booking extends beyond operating hours (${operatingEndTime}). It will be adjusted when confirmed.`);
-    } else if (endHour > operatingEndHour && isCoach) {
-      setError(`Note: As a coach, you can book beyond operating hours (${operatingEndTime}).`);
+    } else if (endHour > operatingEndHour && (isCoach || isAdmin)) {
+      setError(`Note: As a ${isCoach ? 'coach' : 'club admin'}, you can book beyond operating hours (${operatingEndTime}).`);
       setTimeout(() => setError(""), 3000);
     } else {
       setError("");
@@ -364,15 +389,15 @@ export default function CourtSchedulePage() {
         return;
       }
 
-      // Check if slot is in the past (coaches can book past slots)
+      // Check if slot is in the past (coaches and admins can book past slots)
       const isPast = new Date(`${bookingData.date} ${bookingData.startTime}`) < new Date();
-      if (isPast && !isCoach) {
+      if (isPast && !isCoach && !isAdmin) {
         setError("Cannot book past time slots");
         return;
       }
 
-      // Check advance booking day limit (coaches can book beyond limit)
-      if (!isCoach) {
+      // Check advance booking day limit (coaches and admins can book beyond limit)
+      if (!isCoach && !isAdmin) {
         const maxAdvanceDays = club?.maxAdvanceBookingDays || 30;
         const maxDate = addDays(new Date(), maxAdvanceDays);
         const bookingDateTime = new Date(`${bookingData.date} ${bookingData.startTime}`);
@@ -388,11 +413,11 @@ export default function CourtSchedulePage() {
       const endHour = parseInt(bookingData.endTime.split(':')[0] || '0');
       const operatingEndHour = parseInt(operatingEndTime.split(':')[0] || '22');
       
-      // Check if booking extends beyond operating hours (coaches are exempt)
+      // Check if booking extends beyond operating hours (coaches and admins are exempt)
       let adjustedEndTime = bookingData.endTime;
       let showWarning = false;
       
-      if (endHour > operatingEndHour && !isCoach) {
+      if (endHour > operatingEndHour && !isCoach && !isAdmin) {
         adjustedEndTime = operatingEndTime;
         showWarning = true;
         setError(`Court schedule ends at ${operatingEndTime}. Your booking has been adjusted to end at ${operatingEndTime}.`);
@@ -538,20 +563,30 @@ export default function CourtSchedulePage() {
                 Court Schedule
               </h1>
               {club && (
-                <p className={`mt-1 text-xs sm:text-sm font-light ${
-                  darkMode ? "text-gray-500" : "text-gray-400"
-                }`}>
-                  {club.name}
-                </p>
+                <>
+                  <p className={`mt-1 text-xs sm:text-sm font-light ${
+                    darkMode ? "text-gray-500" : "text-gray-400"
+                  }`}>
+                    {club.name}
+                  </p>
+                  {!isCoach && !isAdmin && (
+                    <p className={`mt-1 text-[10px] sm:text-xs font-light ${
+                      darkMode ? "text-gray-600" : "text-gray-500"
+                    }`}>
+                      Hours: {club.operatingHours?.startTime || '08:00'} - {club.operatingHours?.endTime || '20:00'} • 
+                      Book up to {club.maxAdvanceBookingDays || 30} days ahead
+                    </p>
+                  )}
+                </>
               )}
-              {isCoach && (
+              {(isCoach || isAdmin) && (
                 <span className={`mt-2 inline-flex items-center px-2 py-1 text-xs font-light border ${
                   darkMode ? "border-green-900/50 text-green-400" : "border-green-200 text-green-600"
                 }`}>
                   <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Coach - Unrestricted Booking
+                  {isCoach ? 'Coach' : 'Club Admin'} - Unrestricted Booking
                 </span>
               )}
             </div>
@@ -670,6 +705,8 @@ export default function CourtSchedulePage() {
                 <input
                   type="date"
                   value={format(selectedDate, 'yyyy-MM-dd')}
+                  min={format(new Date(), 'yyyy-MM-dd')}
+                  max={format(addDays(new Date(), club?.maxAdvanceBookingDays || 30), 'yyyy-MM-dd')}
                   onChange={(e) => handleDateInputChange(e.target.value)}
                   className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-light cursor-pointer ${
                     darkMode 
