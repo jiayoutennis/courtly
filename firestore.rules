@@ -104,6 +104,38 @@ service cloud.firestore {
       );
     }
     
+    // Check if user has an active membership
+    function hasActiveMembership(orgId, userId) {
+      return exists(/databases/$(database)/documents/orgs/$(orgId)/memberships/$(userId)) &&
+             get(/databases/$(database)/documents/orgs/$(orgId)/memberships/$(userId)).data.status == 'active';
+    }
+    
+    // Get user's membership data
+    function getMembership(orgId, userId) {
+      return get(/databases/$(database)/documents/orgs/$(orgId)/memberships/$(userId)).data;
+    }
+    
+    // Get org's membership configuration
+    function getOrgData(orgId) {
+      return get(/databases/$(database)/documents/orgs/$(orgId)).data;
+    }
+    
+    // Check if org requires membership for booking
+    function requiresMembershipForBooking(orgId) {
+      let orgData = getOrgData(orgId);
+      return orgData.keys().hasAny(['requireMembershipForBooking']) && 
+             orgData.requireMembershipForBooking == true;
+    }
+    
+    // Validate booking against tier privileges
+    function canMakeBooking(orgId, userId) {
+      // Staff and Courtly admins can always book, OR
+      // If org requires membership, check if user has active membership, OR
+      // Otherwise, any member can book
+      return isStaff(orgId) || isCourtlyAdminAny() ||
+             (requiresMembershipForBooking(orgId) ? hasActiveMembership(orgId, userId) : isMember(orgId));
+    }
+    
     // Check if user is Courtly super admin (checks custom claims)
     function isCourtlyAdmin() {
       return isAuthenticated() && 
@@ -127,6 +159,9 @@ service cloud.firestore {
     match /users/{userId} {
       // Users can read their own document
       allow read: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Anyone can read coach profiles (needed for public club pages)
+      allow read: if resource.data.userType == 'coach';
       
       // Users can create their own document when signing up
       allow create: if isAuthenticated() && request.auth.uid == userId;
@@ -162,11 +197,19 @@ service cloud.firestore {
       allow read, write: if isCourtlyAdmin();
     }
     
+    // ===== Webhook Logs (Debug) =====
+    match /webhookLogs/{logId} {
+      // Anyone authenticated can read webhook logs for debugging
+      allow read: if isAuthenticated();
+      // Only server can write (via admin SDK)
+    }
+    
     // ===== Orgs Collection (Club Root) =====
     
     match /orgs/{orgId} {
-      // Members can read their org
-  allow read: if isAuthenticated();
+      // Anyone can read org basic info (needed for public membership page)
+      // This includes name, description, membershipEnabled, membershipTiers
+      allow read: if true;
       
       // Only staff can update org settings
       allow update: if isStaff(orgId) || isCourtlyAdmin();
@@ -190,13 +233,23 @@ service cloud.firestore {
         // Members can read all bookings in their org (for conflict checking)
         allow read: if isMember(orgId) || isCourtlyAdmin();
         
-        // Members CANNOT directly write bookings
-        // All booking creation/updates must go through Cloud Functions
-        // Functions will use admin SDK to bypass these rules
-        allow write: if false;
+        // Create booking: Must have proper membership/privileges
+        // Actual privilege validation (days in advance, duration, prime time, etc.)
+        // is enforced in Cloud Functions using tierPrivileges helper functions
+        allow create: if isAuthenticated() && 
+                         canMakeBooking(orgId, request.auth.uid) &&
+                         request.resource.data.memberId == request.auth.uid;
         
-        // Exception: Staff can manage all bookings (and Courtly admins)
-        allow write: if isStaff(orgId) || isCourtlyAdmin();
+        // Update booking: Only owner, staff, or admins
+        allow update: if isAuthenticated() && (
+                           isStaff(orgId) || 
+                           isCourtlyAdmin() ||
+                           resource.data.memberId == request.auth.uid
+                         );
+        
+        // Delete booking: Only staff or admins
+        // (cancellations should use update to set status, not delete)
+        allow delete: if isStaff(orgId) || isCourtlyAdmin();
       }
       
       // ===== Blocks Subcollection (Maintenance/Closures) =====
@@ -216,6 +269,46 @@ service cloud.firestore {
         allow read: if isStaff(orgId) || isCourtlyAdmin();
         
         // Audit logs are write-only via Cloud Functions (or Courtly admins)
+        allow write: if isCourtlyAdmin();
+      }
+      
+      // ===== Membership Plans Subcollection =====
+      
+      match /membershipPlans/{planId} {
+        // Anyone can read membership plans (for public membership page)
+        allow read: if true;
+        
+        // Only staff (owner/managers) can create/update/delete plans
+        allow write: if isStaff(orgId) || isCourtlyAdmin();
+      }
+      
+      // ===== Memberships Subcollection (User Membership Records) =====
+      
+      match /memberships/{membershipId} {
+        // Staff can read all memberships in their org
+        allow read: if isStaff(orgId) || isCourtlyAdmin();
+        
+        // Users can read their own membership (membershipId is the userId)
+        // This allows reading even if document doesn't exist yet
+        allow read: if isAuthenticated() && membershipId == request.auth.uid;
+        
+        // Memberships are created/updated via Stripe webhooks (Cloud Functions)
+        // Direct writes are not allowed except by staff/admins
+        allow write: if isStaff(orgId) || isCourtlyAdmin();
+      }
+      
+      // ===== Payment History Subcollection =====
+      
+      match /payments/{paymentId} {
+        // Users can read their own payment history
+        allow read: if isAuthenticated() && 
+                       resource.data.userId == request.auth.uid;
+        
+        // Staff can read all payments in their org
+        allow read: if isStaff(orgId) || isCourtlyAdmin();
+        
+        // Payments are created via Stripe webhooks (Cloud Functions)
+        // Direct writes are not allowed except by admins
         allow write: if isCourtlyAdmin();
       }
     }
@@ -327,6 +420,37 @@ service cloud.firestore {
       
       // Only Courtly admins can read all submissions and update/delete
       allow read, update, delete: if isCourtlyAdminAny();
+    }
+    
+    // ===== Account Balances (User Subcollection) =====
+    
+    match /users/{userId}/accountBalances/{clubId} {
+      // Users can read their own balance for any club
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Users can write their own balance (for initialization)
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Staff of the club can read member balances
+      allow read: if isAuthenticated() && isStaff(clubId);
+      
+      // Staff can adjust member balances
+      allow write: if isAuthenticated() && isStaff(clubId);
+      
+      // Transactions subcollection
+      match /transactions/{transactionId} {
+        // Users can read their own transactions
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        
+        // Users can create transactions (for booking charges, etc.)
+        allow create: if isAuthenticated() && request.auth.uid == userId;
+        
+        // Staff can read all transactions for their club
+        allow read: if isAuthenticated() && isStaff(clubId);
+        
+        // Staff can create adjustment transactions
+        allow create: if isAuthenticated() && isStaff(clubId);
+      }
     }
     
     // ===== Catch-All: Courtly Admins Full Access =====

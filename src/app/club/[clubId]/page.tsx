@@ -35,6 +35,12 @@ export default function PublicClubPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [coaches, setCoaches] = useState<Array<{id: string; name: string; email: string}>>([]);
+  const [userMembership, setUserMembership] = useState<{
+    tier: string;
+    status: 'active' | 'past_due' | 'canceled' | 'incomplete';
+    endDate: any;
+    autoRenew: boolean;
+  } | null>(null);
 
   // Initialize dark mode
   useEffect(() => {
@@ -148,6 +154,41 @@ export default function PublicClubPage() {
       fetchClubData();
     }
   }, [clubId]);
+
+  // Fetch user's membership for this club
+  useEffect(() => {
+    const fetchUserMembership = async () => {
+      if (!currentUser) {
+        setUserMembership(null);
+        return;
+      }
+
+      try {
+        // Check for membership in org's memberships subcollection
+        const membershipRef = doc(db, "orgs", clubId, "memberships", currentUser.uid);
+        const membershipDoc = await getDoc(membershipRef);
+
+        if (membershipDoc.exists()) {
+          const membershipData = membershipDoc.data();
+          setUserMembership({
+            tier: membershipData.plan?.tier || membershipData.tier || 'unknown',
+            status: membershipData.status || 'active',
+            endDate: membershipData.endDate || membershipData.currentPeriodEnd,
+            autoRenew: membershipData.autoRenew !== false
+          });
+        } else {
+          setUserMembership(null);
+        }
+      } catch (error) {
+        console.error("Error fetching user membership:", error);
+        setUserMembership(null);
+      }
+    };
+
+    if (clubId && currentUser) {
+      fetchUserMembership();
+    }
+  }, [clubId, currentUser]);
 
   // Fetch coaches for this club
   useEffect(() => {
@@ -295,6 +336,121 @@ export default function PublicClubPage() {
             )}
           </div>
         </div>
+        
+        {/* Membership Status */}
+        {currentUser && userMembership && (
+          <div className={`p-6 mb-8 border ${
+            darkMode ? "border-[#1a1a1a] bg-[#0a0a0a]" : "border-gray-100 bg-gray-50"
+          }`}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-xs uppercase tracking-wider font-light mb-2">Your Membership</h2>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-light ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                      Tier:
+                    </span>
+                    <span className={`text-xs font-medium uppercase tracking-wide ${
+                      darkMode ? "text-white" : "text-black"
+                    }`}>
+                      {userMembership.tier === 'day_pass' ? 'Day Pass' : 
+                       userMembership.tier === 'monthly' ? 'Monthly' : 
+                       userMembership.tier === 'annual' ? 'Annual' : 
+                       userMembership.tier}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-light ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                      Status:
+                    </span>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                      userMembership.status === 'active'
+                        ? (darkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-800')
+                        : userMembership.status === 'past_due'
+                          ? (darkMode ? 'bg-yellow-900/30 text-yellow-400' : 'bg-yellow-100 text-yellow-800')
+                          : (darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-100 text-red-800')
+                    }`}>
+                      {userMembership.status.toUpperCase()}
+                    </span>
+                  </div>
+                  
+                  {userMembership.endDate && (
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-light ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                        {userMembership.status === 'active' ? 'Renews' : 'Expires'}:
+                      </span>
+                      <span className={`text-xs ${darkMode ? "text-white" : "text-black"}`}>
+                        {userMembership.endDate?.toDate ? 
+                          userMembership.endDate.toDate().toLocaleDateString() : 
+                          new Date(userMembership.endDate).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {userMembership.autoRenew && userMembership.status === 'active' && (
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${darkMode ? "text-green-400" : "text-green-600"}`} fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                      </svg>
+                      <span className={`text-xs font-light ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                        Auto-renew enabled
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <Link
+                href={`/club/${clubId}/membership`}
+                className={`px-4 py-2 text-xs uppercase tracking-wider font-light transition ${
+                  darkMode
+                    ? "border border-white text-white hover:bg-white hover:text-black"
+                    : "border border-black text-black hover:bg-black hover:text-white"
+                }`}
+              >
+                View Plans
+              </Link>
+            </div>
+            
+            {userMembership.status === 'past_due' && (
+              <div className={`mt-4 p-3 rounded border ${
+                darkMode ? 'border-yellow-900/50 bg-yellow-900/20 text-yellow-400' : 'border-yellow-200 bg-yellow-50 text-yellow-800'
+              }`}>
+                <p className="text-xs">
+                  Your membership payment is past due. Please update your payment method to continue enjoying member benefits.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* No Membership Prompt */}
+        {currentUser && !userMembership && isMember && (
+          <div className={`p-6 mb-8 border ${
+            darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+          }`}>
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-xs uppercase tracking-wider font-light mb-2">Become a Member</h2>
+                <p className={`text-xs font-light ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  Get exclusive access to court bookings, events, and special rates.
+                </p>
+              </div>
+              
+              <Link
+                href={`/club/${clubId}/membership`}
+                className={`px-4 py-2 text-xs uppercase tracking-wider font-light transition ${
+                  darkMode
+                    ? "bg-white text-black hover:bg-gray-200"
+                    : "bg-black text-white hover:bg-gray-800"
+                }`}
+              >
+                View Plans
+              </Link>
+            </div>
+          </div>
+        )}
         
         {/* Coaches */}
         {coaches.length > 0 && (

@@ -171,6 +171,27 @@ async function createOrgDocument(clubId: string, clubData: ClubData): Promise<vo
     },
     stripeAccountId: '',
     
+    // Subscription - Default to free plan
+    subscription: {
+      plan: 'free',
+      status: 'active',
+      stripeSubscriptionId: '',
+      stripeCustomerId: '',
+      stripePriceId: '',
+      currentPeriodStart: 0,
+      currentPeriodEnd: 0,
+      cancelAtPeriodEnd: false
+    },
+    
+    // Membership settings - Default to disabled until club configures
+    membershipEnabled: false, // Club must enable and configure memberships
+    membershipTiers: {}, // Empty object - populated when club creates membership plans
+    membershipAutoRenew: true, // Default: auto-renew enabled
+    requireMembershipForBooking: false, // Default: non-members can book
+    
+    // Platform fee settings (Courtly's revenue)
+    platformFeePercent: 5, // Default: 5% platform fee on all transactions
+    
     // Staff
     staff: clubData.submittedBy ? [{
       userId: clubData.submittedBy,

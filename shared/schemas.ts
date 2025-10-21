@@ -65,6 +65,18 @@ export const PaymentSettingsSchema = z.object({
   payoutEnabled: z.boolean(),
 });
 
+export const SubscriptionInfoSchema = z.object({
+  plan: z.enum(['free', 'basic', 'pro', 'enterprise']),
+  status: z.enum(['active', 'canceled', 'past_due', 'trialing', 'incomplete', 'incomplete_expired', 'unpaid']),
+  stripeSubscriptionId: z.string(),
+  stripeCustomerId: z.string(),
+  stripePriceId: z.string(),
+  currentPeriodStart: z.number(),
+  currentPeriodEnd: z.number(),
+  cancelAtPeriodEnd: z.boolean(),
+  lastPaymentFailed: z.any().optional(), // Timestamp
+});
+
 export const SocialLinksSchema = z.object({
   facebook: z.string().url().optional(),
   instagram: z.string().url().optional(),
@@ -128,6 +140,8 @@ export const OrgSchema = z.object({
   currencySymbol: z.string(),
   paymentSettings: PaymentSettingsSchema,
   stripeAccountId: z.string(),
+  stripeCustomerId: z.string().optional(),
+  subscription: SubscriptionInfoSchema.optional(),
   staff: z.array(StaffMemberSchema),
   isActive: z.boolean(),
   isVerified: z.boolean(),
@@ -223,4 +237,56 @@ export const CancelBookingResponseSchema = z.object({
   success: z.boolean(),
   refundAmount: z.number().optional(),
   error: z.string().optional(),
+});
+
+// ===== Membership Schemas =====
+
+export const MembershipTierSchema = z.enum(['monthly', 'annual', 'day_pass']);
+
+export const PaymentTypeSchema = z.enum(['booking', 'membership', 'subscription']);
+
+export const PaymentStatusSchema = z.enum(['pending', 'completed', 'failed', 'refunded']);
+
+export const MembershipPlanSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  tier: MembershipTierSchema,
+  price: z.number().min(0),
+  currency: z.string().length(3),
+  stripePriceId: z.string(),
+  stripeProductId: z.string(),
+  features: z.array(z.string()),
+  description: z.string(),
+  isActive: z.boolean(),
+});
+
+export const MemberMembershipSchema = z.object({
+  membershipId: z.string(),
+  userId: z.string(),
+  orgId: z.string(),
+  plan: MembershipPlanSchema,
+  status: z.enum(['active', 'expired', 'canceled']),
+  startDate: z.any(), // Timestamp
+  endDate: z.any(), // Timestamp
+  stripeSubscriptionId: z.string().optional(),
+  stripeCustomerId: z.string(),
+  paymentId: z.string(),
+  autoRenew: z.boolean(),
+  createdAt: z.any(), // Timestamp
+  updatedAt: z.any(), // Timestamp
+});
+
+export const PaymentSchema = z.object({
+  paymentId: z.string(),
+  userId: z.string(),
+  orgId: z.string(),
+  type: PaymentTypeSchema,
+  amount: z.number().min(0),
+  currency: z.string().length(3),
+  status: PaymentStatusSchema,
+  stripePaymentIntentId: z.string().optional(),
+  stripeCheckoutSessionId: z.string().optional(),
+  metadata: z.record(z.any()),
+  createdAt: z.any(), // Timestamp
+  completedAt: z.any().optional(), // Timestamp
 });

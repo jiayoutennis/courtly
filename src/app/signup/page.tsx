@@ -95,6 +95,7 @@ export default function SignUpPage() {
         },
         permissions: [],
         stripeCustomerId: null,
+        clubMemberships: {}, // Initialize empty map for club memberships (clubId -> tier)
         createdBy: user.uid, // Self-created
         referralCode: null,
         inviteToken: null,
@@ -198,6 +199,7 @@ export default function SignUpPage() {
           },
           permissions: [],
           stripeCustomerId: null,
+          clubMemberships: {}, // Initialize empty map for club memberships (clubId -> tier)
           createdBy: user.uid,
           referralCode: null,
           inviteToken: null,

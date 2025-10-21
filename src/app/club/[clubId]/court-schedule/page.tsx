@@ -7,11 +7,14 @@ import { auth, db } from "../../../../../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { 
   doc, getDoc, collection, query, 
-  getDocs, where, addDoc, serverTimestamp, deleteDoc
+  getDocs, where, addDoc, serverTimestamp, deleteDoc, updateDoc
 } from "firebase/firestore";
 import DarkModeToggle from "@/app/components/DarkModeToggle";
 import PageTitle from "@/app/components/PageTitle";
 import { format, addDays } from "date-fns";
+import { getUserTierPrivileges } from "../../../../../lib/tierPrivileges";
+import { getAccountBalance, hasSufficientBalance, refundBookingToBalance, formatBalance, chargeOrDebitBalance } from "../../../../../src/lib/accountBalance";
+import type { TierPrivileges } from "../../../../../shared/types";
 
 interface Court {
   id: string;
@@ -67,6 +70,12 @@ export default function CourtSchedulePage() {
   const [currentUserName, setCurrentUserName] = useState("");
   const [isCoach, setIsCoach] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  
+  // Payment and membership state
+  const [userPrivileges, setUserPrivileges] = useState<TierPrivileges | null>(null);
+  const [accountBalance, setAccountBalance] = useState<number>(0);
+  const [bookingCost, setBookingCost] = useState<number>(0);
+  const [showPaymentInfo, setShowPaymentInfo] = useState(false);
   
   const router = useRouter();
   const params = useParams();
@@ -140,6 +149,55 @@ export default function CourtSchedulePage() {
       fetchBookings(clubId);
     }
   }, [selectedDate, clubId]);
+
+  // Fetch user's membership privileges and account balance
+  useEffect(() => {
+    const fetchUserPaymentInfo = async () => {
+      if (!currentUserId || !clubId) return;
+      
+      try {
+        // Get membership privileges
+        const privileges = await getUserTierPrivileges(currentUserId, clubId);
+        setUserPrivileges(privileges);
+        
+        // If no privileges (no membership), set default pricing for non-members
+        if (!privileges) {
+          console.log("User has no active membership - will use non-member pricing");
+          // Set a default non-member privilege with higher pricing
+          setUserPrivileges({
+            maxDaysInAdvance: 7,
+            maxBookingsPerDay: 2,
+            maxBookingDuration: 2,
+            minBookingDuration: 1,
+            freeBookingsPerMonth: 0,
+            bookingPricePerHour: 4000, // $40/hour for non-members (higher than member rates)
+            useAccountBalance: true,
+            requireImmediatePayment: false,
+            allowPrimeTimeBooking: true,
+            allowWeekendBooking: true,
+            priorityBooking: false,
+            cancellationWindowHours: 24,
+            allowFreeCancellation: false,
+            allowGuests: false,
+            maxGuestsPerBooking: 0,
+            discountPercentage: 0,
+            accessToMemberEvents: false,
+            accessToLessons: false,
+            lessonDiscount: 0
+          });
+        }
+        
+        // Get account balance (will initialize if doesn't exist)
+        const balance = await getAccountBalance(currentUserId, clubId);
+        setAccountBalance(balance);
+        console.log("Account balance loaded:", formatBalance(balance));
+      } catch (error) {
+        console.error("Error fetching payment info:", error);
+      }
+    };
+    
+    fetchUserPaymentInfo();
+  }, [currentUserId, clubId]);
 
   // Close date picker when clicking outside
   useEffect(() => {
@@ -225,6 +283,10 @@ export default function CourtSchedulePage() {
       
       bookingsSnapshot.forEach((doc) => {
         const data = doc.data();
+        // Filter out cancelled bookings (unless you're staff/admin viewing them)
+        if (data.status === "cancelled" && !isAdmin && !isCoach) {
+          return;
+        }
         bookingsData.push({
           id: doc.id,
           courtId: data.courtId,
@@ -346,6 +408,20 @@ export default function CourtSchedulePage() {
       duration: 1,
       notes: ""
     });
+    
+    // Calculate initial cost (1 hour)
+    let cost = 0;
+    if (userPrivileges && !isCoach && !isAdmin) {
+      cost = userPrivileges.bookingPricePerHour || 0;
+      console.log("Booking cost calculated:", formatBalance(cost), "Rate:", formatBalance(userPrivileges.bookingPricePerHour), "Duration: 1 hour");
+    } else if (isCoach || isAdmin) {
+      console.log("User is coach/admin - no charge");
+    } else {
+      console.log("No privileges set - cost will be 0");
+    }
+    setBookingCost(cost);
+    setShowPaymentInfo(cost > 0);
+    
     setShowBookingModal(true);
   };
 
@@ -360,6 +436,16 @@ export default function CourtSchedulePage() {
     const operatingEndTime = club?.operatingHours?.endTime || "22:00";
     const endHour = parseInt(newEndTime.split(':')[0] || '0');
     const operatingEndHour = parseInt(operatingEndTime.split(':')[0] || '22');
+    
+    // Calculate booking cost based on user's tier privileges
+    let cost = 0;
+    if (userPrivileges && !isCoach && !isAdmin) {
+      // Members and non-members pay per hour
+      cost = (userPrivileges.bookingPricePerHour || 0) * duration;
+      console.log("Duration changed to", duration, "hours. New cost:", formatBalance(cost));
+    }
+    setBookingCost(cost);
+    setShowPaymentInfo(cost > 0);
     
     setBookingData(prev => ({
       ...prev,
@@ -436,6 +522,18 @@ export default function CourtSchedulePage() {
         }
       }
 
+      // Check if booking would exceed negative balance limit (default $100 debt allowed)
+      if (bookingCost > 0 && !isCoach && !isAdmin) {
+        const hasSufficient = await hasSufficientBalance(currentUserId, clubId, bookingCost);
+        
+        if (!hasSufficient) {
+          const maxDebt = 10000; // $100 default max negative balance
+          const newBalance = accountBalance - bookingCost;
+          setError(`Booking would exceed credit limit. Your balance would be ${formatBalance(newBalance)} (limit: -${formatBalance(maxDebt)}). Please pay your outstanding balance first.`);
+          return;
+        }
+      }
+
       // Create booking with adjusted end time
       await addDoc(collection(db, `orgs/${clubId}/bookings`), {
         courtId: bookingData.courtId,
@@ -444,21 +542,64 @@ export default function CourtSchedulePage() {
         startTime: bookingData.startTime,
         endTime: adjustedEndTime,
         userId: currentUserId,
+        memberId: currentUserId, // Required by Firestore security rules
         userName: currentUserName,
         notes: bookingData.notes || "",
         createdAt: serverTimestamp(),
-        status: "confirmed"
+        status: "confirmed",
+        cost: bookingCost, // Store the cost
+        paid: false // Will be paid later via account balance
       });
 
+      // Charge booking using automatic payment or add to balance
+      if (bookingCost > 0 && !isCoach && !isAdmin) {
+        const chargeResult = await chargeOrDebitBalance(
+          currentUserId,
+          clubId,
+          bookingCost,
+          `${bookingData.courtName} - ${bookingData.date} ${bookingData.startTime}`
+        );
+        
+        if (chargeResult.success) {
+          if (chargeResult.charged) {
+            console.log(`✅ Payment method charged: ${formatBalance(bookingCost)}`);
+            setSuccess(`Booking confirmed! Your payment method was charged ${formatBalance(bookingCost)}.`);
+          } else {
+            console.log(`📝 Added to account balance: ${formatBalance(bookingCost)}`);
+            setSuccess(`Booking confirmed! ${formatBalance(bookingCost)} added to your account balance.`);
+          }
+        } else {
+          console.error('Charge failed:', chargeResult.message);
+          setSuccess(`Booking confirmed! ${formatBalance(bookingCost)} added to your account balance.`);
+        }
+        
+        // Refresh balance
+        const newBalance = await getAccountBalance(currentUserId, clubId);
+        setAccountBalance(newBalance);
+        
+        console.log(`New balance: ${formatBalance(newBalance)}`);
+      } else {
+        setSuccess("Booking confirmed successfully!");
+      }
+
+      // Refresh bookings first to show the new booking immediately
+      await fetchBookings(clubId);
+      
+      // Close modal
+      setShowBookingModal(false);
+      
+      // Show success message
       if (showWarning) {
         setSuccess("Court booked successfully (adjusted to operating hours)!");
       } else {
-        setSuccess("Court booked successfully!");
+        if (bookingCost > 0 && !isCoach && !isAdmin) {
+          const newBalance = accountBalance - bookingCost;
+          const owedMsg = newBalance < 0 ? ` You now owe ${formatBalance(Math.abs(newBalance))}.` : ` New balance: ${formatBalance(newBalance)}.`;
+          setSuccess(`Court booked! ${formatBalance(bookingCost)} charged to your account.${owedMsg}`);
+        } else {
+          setSuccess("Court booked successfully!");
+        }
       }
-      setShowBookingModal(false);
-      
-      // Refresh bookings
-      await fetchBookings(clubId);
 
       // Clear success message after 3 seconds
       setTimeout(() => {
@@ -480,10 +621,50 @@ export default function CourtSchedulePage() {
       setError("");
       setSuccess("");
 
-      // Delete the booking
-      await deleteDoc(doc(db, `orgs/${clubId}/bookings`, selectedBooking.id));
+      // Get booking document to check if it has a cost
+      const bookingDoc = await getDoc(doc(db, `orgs/${clubId}/bookings`, selectedBooking.id));
+      let refundAmount = 0;
+      
+      if (bookingDoc.exists()) {
+        const bookingData = bookingDoc.data();
+        refundAmount = bookingData.cost || 0;
+      }
 
-      setSuccess("Booking cancelled successfully!");
+      // Staff and admins can delete, regular members update status to "cancelled"
+      if (isAdmin || isCoach) {
+        // Delete the booking (staff/admin only)
+        await deleteDoc(doc(db, `orgs/${clubId}/bookings`, selectedBooking.id));
+      } else {
+        // Regular members: update status to "cancelled" instead of deleting
+        await updateDoc(doc(db, `orgs/${clubId}/bookings`, selectedBooking.id), {
+          status: "cancelled",
+          cancelledAt: serverTimestamp()
+        });
+        
+        // Refund the cost to the user's balance if there was a charge
+        if (refundAmount > 0 && currentUserId) {
+          await refundBookingToBalance(
+            currentUserId,
+            clubId,
+            refundAmount,
+            selectedBooking.id,
+            `Refund: ${selectedBooking.courtId} - ${selectedBooking.date} ${selectedBooking.startTime}`
+          );
+          
+          // Refresh balance
+          const newBalance = await getAccountBalance(currentUserId, clubId);
+          setAccountBalance(newBalance);
+          
+          console.log(`Refunded ${formatBalance(refundAmount)} to account. New balance: ${formatBalance(newBalance)}`);
+        }
+      }
+
+      if (refundAmount > 0 && !isAdmin && !isCoach) {
+        setSuccess(`Booking cancelled! ${formatBalance(refundAmount)} refunded to your account.`);
+      } else {
+        setSuccess("Booking cancelled successfully!");
+      }
+      
       setShowViewModal(false);
       setSelectedBooking(null);
       
@@ -864,11 +1045,20 @@ export default function CourtSchedulePage() {
           <div className={`max-w-sm sm:max-w-md w-full rounded-lg p-4 sm:p-6 ${
             darkMode ? "bg-[#1a1a1a]" : "bg-white"
           }`}>
-            <h2 className={`text-lg sm:text-xl font-light mb-3 sm:mb-4 ${
-              darkMode ? "text-white" : "text-gray-900"
-            }`}>
-              Book Court
-            </h2>
+            <div className="flex justify-between items-start mb-3 sm:mb-4">
+              <h2 className={`text-lg sm:text-xl font-light ${
+                darkMode ? "text-white" : "text-gray-900"
+              }`}>
+                Book Court
+              </h2>
+              {bookingCost > 0 && (
+                <span className={`text-xs font-medium px-2 py-1 rounded ${
+                  darkMode ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-800"
+                }`}>
+                  Charged to Account
+                </span>
+              )}
+            </div>
 
             <div className="space-y-3 sm:space-y-4">
               {/* Court Info */}
@@ -974,6 +1164,88 @@ export default function CourtSchedulePage() {
                   } focus:outline-none`}
                 />
               </div>
+
+              {/* Payment Information */}
+              {showPaymentInfo && (
+                <div className={`p-3 sm:p-4 rounded ${
+                  darkMode ? "bg-[#0a0a0a] border border-gray-800" : "bg-gray-50 border border-gray-200"
+                }`}>
+                  <div className={`mb-2 pb-2 border-b ${
+                    darkMode ? "border-gray-800" : "border-gray-200"
+                  }`}>
+                    <div className={`text-xs font-medium mb-1 ${
+                      darkMode ? "text-gray-300" : "text-gray-700"
+                    }`}>
+                      � This booking will be charged to your account
+                    </div>
+                    <div className={`text-[10px] ${
+                      darkMode ? "text-gray-500" : "text-gray-500"
+                    }`}>
+                      Rate: {userPrivileges ? formatBalance(userPrivileges.bookingPricePerHour) : "$0.00"}/hour × {bookingData.duration} hour{bookingData.duration > 1 ? 's' : ''}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className={`text-xs sm:text-sm font-light ${
+                        darkMode ? "text-gray-400" : "text-gray-600"
+                      }`}>
+                        Booking Cost
+                      </span>
+                      <span className={`text-sm sm:text-base font-medium ${
+                        darkMode ? "text-white" : "text-gray-900"
+                      }`}>
+                        {formatBalance(bookingCost)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className={`text-xs sm:text-sm font-light ${
+                        darkMode ? "text-gray-400" : "text-gray-600"
+                      }`}>
+                        Current Balance
+                      </span>
+                      <span className={`text-sm sm:text-base font-medium ${
+                        accountBalance >= 0
+                          ? darkMode ? "text-green-400" : "text-green-600"
+                          : darkMode ? "text-red-400" : "text-red-600"
+                      }`}>
+                        {formatBalance(accountBalance)}
+                      </span>
+                    </div>
+                    <div className={`pt-2 border-t ${
+                      darkMode ? "border-gray-800" : "border-gray-200"
+                    }`}>
+                      <div className="flex justify-between items-center">
+                        <span className={`text-xs sm:text-sm font-light ${
+                          darkMode ? "text-gray-400" : "text-gray-600"
+                        }`}>
+                          {accountBalance - bookingCost >= 0 ? "Balance After" : "You Will Owe"}
+                        </span>
+                        <span className={`text-sm sm:text-base font-medium ${
+                          accountBalance - bookingCost >= 0
+                            ? darkMode ? "text-green-400" : "text-green-600"
+                            : darkMode ? "text-red-400" : "text-red-600"
+                        }`}>
+                          {formatBalance(Math.abs(accountBalance - bookingCost))}
+                        </span>
+                      </div>
+                    </div>
+                    {accountBalance - bookingCost < -10000 && (
+                      <div className={`mt-2 text-xs ${
+                        darkMode ? "text-red-400" : "text-red-600"
+                      }`}>
+                        ⚠️ This booking would exceed your $100 credit limit. Please pay your outstanding balance first.
+                      </div>
+                    )}
+                    {accountBalance - bookingCost >= -10000 && accountBalance - bookingCost < 0 && (
+                      <div className={`mt-2 text-xs ${
+                        darkMode ? "text-yellow-400" : "text-yellow-700"
+                      }`}>
+                        ℹ️ You can book now and pay later. Your balance will go negative.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Actions */}

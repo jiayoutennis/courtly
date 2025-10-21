@@ -36,6 +36,9 @@ interface Member {
   userType: string;
   joinedAt?: string;
   organization: string | string[];
+  membershipStatus?: "active" | "expired" | "none";
+  membershipTier?: "monthly" | "annual" | "day_pass" | string;
+  membershipEndDate?: Date;
 }
 
 type TabType = "members" | "requests";
@@ -131,8 +134,8 @@ export default function ManageMembersPage() {
         const usersSnapshot = await getDocs(collection(db, "users"));
         const membersData: Member[] = [];
         
-        usersSnapshot.forEach((doc) => {
-          const data = doc.data();
+        for (const userDoc of usersSnapshot.docs) {
+          const data = userDoc.data();
           const organization = data.organization;
           
           // Check if user belongs to this club
@@ -141,16 +144,36 @@ export default function ManageMembersPage() {
             : organization === clubId;
             
           if (isMember) {
+            // Fetch membership data from /orgs/{clubId}/memberships/{userId}
+            let membershipStatus: "active" | "expired" | "none" = "none";
+            let membershipTier: string | undefined;
+            let membershipEndDate: Date | undefined;
+            
+            try {
+              const membershipDoc = await getDoc(doc(db, "orgs", clubId, "memberships", userDoc.id));
+              if (membershipDoc.exists()) {
+                const membershipData = membershipDoc.data();
+                membershipStatus = membershipData.status || "none";
+                membershipTier = membershipData.tier;
+                membershipEndDate = membershipData.endDate?.toDate();
+              }
+            } catch (error) {
+              console.error(`Error fetching membership for ${userDoc.id}:`, error);
+            }
+            
             membersData.push({
-              id: doc.id,
+              id: userDoc.id,
               email: data.email || "No email",
               name: data.name || data.displayName,
               userType: data.userType || "member",
               joinedAt: data.createdAt,
-              organization: data.organization
+              organization: data.organization,
+              membershipStatus,
+              membershipTier,
+              membershipEndDate
             });
           }
-        });
+        }
         
         // Sort members by email
         membersData.sort((a, b) => a.email.localeCompare(b.email));
@@ -639,6 +662,11 @@ export default function ManageMembersPage() {
                         }`}>
                           Role
                         </th>
+                        <th scope="col" className={`px-6 py-4 text-left text-xs font-light uppercase tracking-wider ${
+                          darkMode ? 'text-gray-600' : 'text-gray-400'
+                        }`}>
+                          Membership
+                        </th>
                         <th scope="col" className={`px-6 py-4 text-right text-xs font-light uppercase tracking-wider ${
                           darkMode ? 'text-gray-600' : 'text-gray-400'
                         }`}>
@@ -671,6 +699,36 @@ export default function ManageMembersPage() {
                             }`}>
                               {member.userType === "courtly" ? "Courtly Admin" : member.userType}
                             </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            {member.membershipStatus === "active" ? (
+                              <div className="flex flex-col gap-1">
+                                <span className={`inline-flex items-center px-3 py-1 border text-xs font-light uppercase tracking-wider ${
+                                  darkMode ? "border-green-900/50 text-green-400" : "border-green-200 text-green-600"
+                                }`}>
+                                  Active • {member.membershipTier}
+                                </span>
+                                {member.membershipEndDate && (
+                                  <span className={`text-xs font-light ${
+                                    darkMode ? "text-gray-600" : "text-gray-400"
+                                  }`}>
+                                    Until {member.membershipEndDate.toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                            ) : member.membershipStatus === "expired" ? (
+                              <span className={`inline-flex items-center px-3 py-1 border text-xs font-light uppercase tracking-wider ${
+                                darkMode ? "border-gray-800 text-gray-600" : "border-gray-200 text-gray-500"
+                              }`}>
+                                Expired
+                              </span>
+                            ) : (
+                              <span className={`inline-flex items-center px-3 py-1 border text-xs font-light uppercase tracking-wider ${
+                                darkMode ? "border-gray-800 text-gray-600" : "border-gray-200 text-gray-500"
+                              }`}>
+                                No Membership
+                              </span>
+                            )}
                           </td>
                           <td className="px-6 py-4 text-right text-sm font-light whitespace-nowrap">
                             <div className="flex justify-end gap-4">

@@ -57,6 +57,7 @@ export default function ManageAllUsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userOrganizations, setUserOrganizations] = useState<string[]>([]);
   const [showOrgModal, setShowOrgModal] = useState(false);
+  const [pendingAdminChange, setPendingAdminChange] = useState<{ userId: string; newType: 'admin' | 'member' | 'courtly' } | null>(null);
   
   const router = useRouter();
 
@@ -165,8 +166,33 @@ export default function ManageAllUsersPage() {
   }, [users, filterType, searchTerm]);
 
   const handleChangeUserType = async (userId: string, newType: 'admin' | 'member' | 'courtly') => {
-    if (!confirm(`Are you sure you want to change this user's type to ${newType}?`)) {
-      return;
+    // If changing to admin, we need to assign a club first
+    if (newType === 'admin') {
+      const user = users.find(u => u.id === userId);
+      if (!user) return;
+      
+      // Check if user already has organizations
+      const currentOrgs = user.organization;
+      const hasOrgs = Array.isArray(currentOrgs) ? currentOrgs.length > 0 : !!currentOrgs;
+      
+      if (!hasOrgs) {
+        // User doesn't have any organizations, open modal to select clubs
+        setPendingAdminChange({ userId, newType });
+        setSelectedUser(user);
+        setUserOrganizations([]);
+        setShowOrgModal(true);
+        return;
+      }
+      
+      // User already has organizations, proceed with confirmation
+      if (!confirm(`Are you sure you want to change this user's type to ${newType}?`)) {
+        return;
+      }
+    } else {
+      // For other type changes, just confirm
+      if (!confirm(`Are you sure you want to change this user's type to ${newType}?`)) {
+        return;
+      }
     }
 
     setProcessingId(userId);
@@ -244,25 +270,47 @@ export default function ManageAllUsersPage() {
   const handleSaveOrganizations = async () => {
     if (!selectedUser) return;
 
+    // If saving organizations for a pending admin change, require at least one org
+    if (pendingAdminChange && userOrganizations.length === 0) {
+      setError("Please select at least one club for the admin");
+      return;
+    }
+
     setProcessingId(selectedUser.id);
     setError("");
     setSuccess("");
 
     try {
-      await updateDoc(doc(db, "users", selectedUser.id), {
+      const updateData: any = {
         organization: userOrganizations,
         updatedAt: serverTimestamp()
-      });
+      };
 
-      setSuccess(`Organizations updated for ${selectedUser.email}`);
+      // If this is part of making someone an admin, also update their userType
+      if (pendingAdminChange) {
+        updateData.userType = pendingAdminChange.newType;
+      }
+
+      await updateDoc(doc(db, "users", selectedUser.id), updateData);
+
+      const successMessage = pendingAdminChange 
+        ? `User promoted to ${pendingAdminChange.newType} and assigned to ${userOrganizations.length} club(s)`
+        : `Organizations updated for ${selectedUser.email}`;
+      
+      setSuccess(successMessage);
       setUsers(prev => prev.map(user => 
         user.id === selectedUser.id 
-          ? { ...user, organization: userOrganizations }
+          ? { 
+              ...user, 
+              organization: userOrganizations,
+              ...(pendingAdminChange ? { userType: pendingAdminChange.newType } : {})
+            }
           : user
       ));
       
       setShowOrgModal(false);
       setSelectedUser(null);
+      setPendingAdminChange(null);
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
       console.error("Error updating organizations:", error);
@@ -669,10 +717,17 @@ export default function ManageAllUsersPage() {
             <div className={`sticky top-0 p-4 sm:p-6 border-b ${
               darkMode ? "bg-[#0a0a0a] border-[#1a1a1a]" : "bg-white border-gray-100"
             }`}>
-              <h2 className="text-[10px] sm:text-xs uppercase tracking-wider font-light">Manage Organizations</h2>
+              <h2 className="text-[10px] sm:text-xs uppercase tracking-wider font-light">
+                {pendingAdminChange ? 'Assign Club(s) to Admin' : 'Manage Organizations'}
+              </h2>
               <p className={`mt-2 text-[10px] sm:text-xs font-light ${darkMode ? "text-gray-500" : "text-gray-500"}`}>
                 {selectedUser.email}
               </p>
+              {pendingAdminChange && (
+                <p className={`mt-2 text-[10px] sm:text-xs font-light ${darkMode ? "text-yellow-400" : "text-yellow-600"}`}>
+                  Please select at least one club for this admin user.
+                </p>
+              )}
             </div>
 
             <div className="p-4 sm:p-6">
@@ -731,6 +786,7 @@ export default function ManageAllUsersPage() {
                 onClick={() => {
                   setShowOrgModal(false);
                   setSelectedUser(null);
+                  setPendingAdminChange(null);
                 }}
                 className={`flex-1 sm:flex-initial px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs uppercase tracking-wider font-light border transition ${
                   darkMode

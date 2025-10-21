@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import DarkModeToggle from "@/app/components/DarkModeToggle";
 import PageTitle from "@/app/components/PageTitle";
+import MembershipPrivilegesEditor from "@/components/MembershipPrivilegesEditor";
 
 // Define types
 interface Court {
@@ -653,6 +654,75 @@ export default function ManageClubPage() {
               admin@courtly.com
             </a>
           </p>
+        </div>
+
+        {/* Quick Links Section */}
+        <div className={`mb-8 p-6 border ${darkMode ? "border-[#1a1a1a]" : "border-gray-100"}`}>
+          <h2 className="text-xl font-light uppercase tracking-wider text-xs mb-4">Quick Links</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Link 
+              href={`/club/${clubId}/stripe-setup`}
+              className={`p-4 border transition-colors ${
+                darkMode 
+                  ? "border-[#1a1a1a] hover:bg-[#1a1a1a]" 
+                  : "border-gray-100 hover:bg-gray-50"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">💳</div>
+                <div>
+                  <h3 className={`font-medium mb-1 ${darkMode ? "text-white" : "text-gray-900"}`}>
+                    Stripe Payment Setup
+                  </h3>
+                  <p className={`text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                    Configure membership plans and payment settings
+                  </p>
+                </div>
+              </div>
+            </Link>
+
+            <Link 
+              href={`/club/${clubId}/membership`}
+              className={`p-4 border transition-colors ${
+                darkMode 
+                  ? "border-[#1a1a1a] hover:bg-[#1a1a1a]" 
+                  : "border-gray-100 hover:bg-gray-50"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">👥</div>
+                <div>
+                  <h3 className={`font-medium mb-1 ${darkMode ? "text-white" : "text-gray-900"}`}>
+                    Membership Page
+                  </h3>
+                  <p className={`text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                    View and preview membership plans for members
+                  </p>
+                </div>
+              </div>
+            </Link>
+
+            <Link 
+              href={`/club/${clubId}/manage-members`}
+              className={`p-4 border transition-colors ${
+                darkMode 
+                  ? "border-[#1a1a1a] hover:bg-[#1a1a1a]" 
+                  : "border-gray-100 hover:bg-gray-50"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">⚙️</div>
+                <div>
+                  <h3 className={`font-medium mb-1 ${darkMode ? "text-white" : "text-gray-900"}`}>
+                    Manage Members
+                  </h3>
+                  <p className={`text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                    View and manage club members and their access
+                  </p>
+                </div>
+              </div>
+            </Link>
+          </div>
         </div>
         
         {/* Club Details Section */}
@@ -1844,6 +1914,9 @@ export default function ManageClubPage() {
             </div>
           </div>
         </div>
+
+        {/* Membership Privileges Configuration */}
+        <MembershipPrivilegesEditor clubId={clubId} darkMode={darkMode} />
       </div>
     </div>
   );
