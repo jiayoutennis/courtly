@@ -256,29 +256,56 @@ export default function RequestLessonPage() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${
-      darkMode ? "bg-gray-900 text-gray-50" : "bg-gray-50 text-gray-900"
+      darkMode ? "bg-[#0a0a0a] text-white" : "bg-white text-black"
     }`}>
       <PageTitle title={`Request Lesson - ${clubInfo?.name || 'Club'}`} />
       
       {/* Header */}
-      <header className={`py-4 px-6 flex items-center justify-between shadow-md ${
-        darkMode ? "bg-gray-800" : "bg-white"
+      <header className={`py-4 sm:py-6 px-4 sm:px-6 border-b ${
+        darkMode ? "border-[#1a1a1a]" : "border-gray-100"
       }`}>
-        <div className="flex items-center space-x-4">
-          <Link href={`/club/${clubId}`} className={`flex items-center px-3 py-1.5 rounded-lg transition ${
-            darkMode 
-              ? "bg-gray-700 hover:bg-gray-600 text-gray-200" 
-              : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-          }`}>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back to Club
-          </Link>
-          <h1 className="text-2xl font-bold">Request a Lesson</h1>
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+            <div>
+              <h1 className={`text-xl sm:text-2xl font-light ${
+                darkMode ? "text-white" : "text-black"
+              }`}>
+                Request a Lesson
+              </h1>
+              {clubInfo && (
+                <p className={`mt-1 text-xs sm:text-sm font-light ${
+                  darkMode ? "text-gray-500" : "text-gray-400"
+                }`}>
+                  {clubInfo.name}
+                </p>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-3 sm:gap-4">
+              <Link
+                href="/dashboard"
+                className={`text-xs sm:text-sm font-light ${
+                  darkMode
+                    ? "text-gray-400 hover:text-white"
+                    : "text-gray-600 hover:text-black"
+                } transition-colors`}
+              >
+                Dashboard
+              </Link>
+              <Link
+                href={`/club/${clubId}`}
+                className={`text-xs sm:text-sm font-light ${
+                  darkMode
+                    ? "text-gray-400 hover:text-white"
+                    : "text-gray-600 hover:text-black"
+                } transition-colors`}
+              >
+                Back to Club
+              </Link>
+              <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
+            </div>
+          </div>
         </div>
-        
-        <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
       </header>
       
       <div className="container mx-auto px-4 py-8 max-w-3xl">

@@ -187,9 +187,13 @@ service cloud.firestore {
       
       // Club admins can update userType to promote members to coach or admin
       // They can set userType to: 'member', 'admin', or 'coach'
+      // Must be admin of the same club as the user being updated
       allow update: if isAuthenticated() &&
                        hasUserDoc() &&
                        getUserDoc().userType == 'admin' &&
+                       // Check if admin and user are in the same organization
+                       (getUserDoc().organization == resource.data.organization ||
+                        (getUserDoc().organization is list && resource.data.organization in getUserDoc().organization)) &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userType', 'updatedAt']) &&
                        request.resource.data.userType in ['member', 'admin', 'coach'];
       
@@ -310,6 +314,30 @@ service cloud.firestore {
         // Payments are created via Stripe webhooks (Cloud Functions)
         // Direct writes are not allowed except by admins
         allow write: if isCourtlyAdmin();
+      }
+      
+      // ===== Coaches Subcollection =====
+      
+      match /coaches/{coachId} {
+        // Members can read coach profiles (for lesson booking)
+        allow read: if isMember(orgId) || isCourtlyAdmin();
+        
+        // Coaches can read and update their own profile
+        allow read, update: if isAuthenticated() && 
+                               request.auth.uid == coachId;
+        
+        // Staff can manage coaches (create, update, delete)
+        allow write: if isStaff(orgId) || isCourtlyAdmin();
+      }
+      
+      // ===== Group Lessons Subcollection =====
+      
+      match /groupLessons/{lessonId} {
+        // Members can read group lessons (for registration)
+        allow read: if isMember(orgId) || isCourtlyAdmin();
+        
+        // Staff can manage group lessons
+        allow write: if isStaff(orgId) || isCourtlyAdmin();
       }
     }
     

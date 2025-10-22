@@ -353,6 +353,14 @@ export default function AdminPage() {
         </div>
         
         <div className="flex items-center space-x-4">
+          <Link
+            href="/dashboard"
+            className={`text-sm font-light ${
+              darkMode ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
+            } transition-colors`}
+          >
+            Dashboard
+          </Link>
           <button
             onClick={toggleDarkMode}
             className={`p-2 rounded-full ${darkMode 

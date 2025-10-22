@@ -43,6 +43,7 @@ interface ClubSettings {
     startTime: string; // Format: "HH:MM" (24-hour)
     endTime: string; // Format: "HH:MM" (24-hour)
     allowedDaysOfWeek: number[]; // 0 = Sunday, 6 = Saturday
+    cancellationPeriodHours: number; // Hours before booking when cancellation is free
   };
 }
 
@@ -201,7 +202,8 @@ export default function ManageClubPage() {
           maxDaysInAdvance: 7,
           startTime: "08:00",
           endTime: "20:00",
-          allowedDaysOfWeek: [0, 1, 2, 3, 4, 5, 6] // All days
+          allowedDaysOfWeek: [0, 1, 2, 3, 4, 5, 6], // All days
+          cancellationPeriodHours: 24 // Default 24 hours
         };
         
         setClubSettings({
@@ -611,6 +613,17 @@ export default function ManageClubPage() {
                   </select>
                 </div>
               )}
+              
+              <Link
+                href="/dashboard"
+                className={`text-xs sm:text-sm font-light ${
+                  darkMode
+                    ? "text-gray-400 hover:text-white"
+                    : "text-gray-600 hover:text-black"
+                } transition-colors`}
+              >
+                Dashboard
+              </Link>
               
               <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
             </div>
@@ -1218,6 +1231,39 @@ export default function ManageClubPage() {
                       darkMode ? "text-gray-500" : "text-gray-400"
                     }`}>
                       How many days ahead members can book courts
+                    </p>
+                  </div>
+                  
+                  {/* Cancellation Period */}
+                  <div>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 font-light ${
+                      darkMode ? "text-gray-400" : "text-gray-600"
+                    }`}>
+                      Free Cancellation Period (hours)
+                    </label>
+                    <select
+                      value={clubSettings.reservationSettings.cancellationPeriodHours}
+                      onChange={(e) => handleReservationSettingChange('cancellationPeriodHours', parseInt(e.target.value))}
+                      className={`w-full px-4 py-3 border font-light focus:outline-none ${
+                        darkMode 
+                          ? "bg-[#0a0a0a] border-[#1a1a1a] text-white" 
+                          : "bg-white border-gray-100 text-gray-900"
+                      }`}
+                    >
+                      <option value="0">No free cancellation</option>
+                      <option value="1">1 hour</option>
+                      <option value="2">2 hours</option>
+                      <option value="4">4 hours</option>
+                      <option value="6">6 hours</option>
+                      <option value="12">12 hours</option>
+                      <option value="24">24 hours</option>
+                      <option value="48">48 hours</option>
+                      <option value="72">72 hours</option>
+                    </select>
+                    <p className={`text-xs mt-1 font-light ${
+                      darkMode ? "text-gray-500" : "text-gray-400"
+                    }`}>
+                      Members get full refund if cancelled within this time before booking
                     </p>
                   </div>
                 </div>

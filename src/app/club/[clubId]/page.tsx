@@ -270,16 +270,28 @@ export default function PublicClubPage() {
               </p>
             </div>
             
-            <Link
-              href="/browse-clubs"
-              className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
-                darkMode
-                  ? "border border-white text-white hover:bg-white hover:text-black"
-                  : "border border-black text-black hover:bg-black hover:text-white"
-              }`}
-            >
-              Back to Browse
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/dashboard"
+                className={`text-xs sm:text-sm font-light ${
+                  darkMode
+                    ? "text-gray-400 hover:text-white"
+                    : "text-gray-600 hover:text-black"
+                } transition-colors`}
+              >
+                Dashboard
+              </Link>
+              <Link
+                href="/browse-clubs"
+                className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
+                  darkMode
+                    ? "border border-white text-white hover:bg-white hover:text-black"
+                    : "border border-black text-black hover:bg-black hover:text-white"
+                }`}
+              >
+                Back to Browse
+              </Link>
+            </div>
           </div>
         </div>
       </header>
@@ -541,7 +553,7 @@ export default function PublicClubPage() {
               </Link>
               
               <Link
-                href={`/club/${clubId}/my-bookings`}
+                href="/my-bookings"
                 className={`block px-4 py-3 text-xs uppercase tracking-wider font-light text-center transition ${
                   darkMode
                     ? "border border-white text-white hover:bg-white hover:text-black"
@@ -549,6 +561,17 @@ export default function PublicClubPage() {
                 }`}
               >
                 My Bookings
+              </Link>
+              
+              <Link
+                href={`/club/${clubId}/lessons`}
+                className={`block px-4 py-3 text-xs uppercase tracking-wider font-light text-center transition ${
+                  darkMode
+                    ? "border border-white text-white hover:bg-white hover:text-black"
+                    : "border border-black text-black hover:bg-black hover:text-white"
+                }`}
+              >
+                Lessons & Classes
               </Link>
             </div>
           </div>

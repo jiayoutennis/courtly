@@ -258,6 +258,20 @@ export default function DashboardPage() {
                   Court Schedule
                 </Link>
                 <Link 
+                  href="/my-bookings"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-2 rounded text-sm font-light transition-colors ${
+                    darkMode 
+                      ? "hover:bg-[#1a1a1a] text-gray-400 hover:text-white" 
+                      : "hover:bg-gray-100 text-gray-600 hover:text-black"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                  </svg>
+                  My Bookings
+                </Link>
+                <Link 
                   href="/browse-clubs"
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={`flex items-center gap-3 px-3 py-2 rounded text-sm font-light transition-colors ${
@@ -339,6 +353,33 @@ export default function DashboardPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                     </svg>
                     Subscription
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Coach Actions */}
+            {userData?.userType === 'coach' && (
+              <div>
+                <h3 className={`text-xs font-light uppercase tracking-wider mb-4 ${
+                  darkMode ? "text-gray-600" : "text-gray-400"
+                }`}>
+                  Coach Tools
+                </h3>
+                <div className="space-y-1">
+                  <Link 
+                    href="/coach/profile"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2 rounded text-sm font-light transition-colors ${
+                      darkMode 
+                        ? "hover:bg-[#1a1a1a] text-gray-400 hover:text-white" 
+                        : "hover:bg-gray-100 text-gray-600 hover:text-black"
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    Coach Profile
                   </Link>
                 </div>
               </div>
@@ -590,22 +631,11 @@ export default function DashboardPage() {
                         </div>
                       ))}
                     </div>
-                  ) : userData?.organization ? (
-                    <div className="flex items-center gap-2">
-                      <div className={`w-4 h-4 border-2 ${
-                        darkMode ? "border-white" : "border-black"
-                      } border-t-transparent rounded-full animate-spin`}></div>
-                      <p className={`font-light ${
-                        darkMode ? "text-gray-500" : "text-gray-600"
-                      }`}>
-                        Loading club information...
-                      </p>
-                    </div>
                   ) : (
                     <p className={`font-light ${
                       darkMode ? "text-gray-500" : "text-gray-600"
                     }`}>
-                      Not a member of any club yet.
+                      Not in any club
                     </p>
                   )}
                 </div>
@@ -636,16 +666,11 @@ export default function DashboardPage() {
           {/* Payment Methods Section */}
           {userData && (
             <div className="max-w-4xl mb-8 sm:mb-12">
-              <h3 className={`text-xl sm:text-2xl font-light mb-4 sm:mb-6 ${
-                darkMode ? "text-white" : "text-gray-900"
+              <h3 className={`text-xs sm:text-sm font-light uppercase tracking-wider mb-4 sm:mb-6 ${
+                darkMode ? "text-gray-500" : "text-gray-400"
               }`}>
-                💳 Payment Methods
+                Payment Methods
               </h3>
-              <p className={`text-sm mb-6 ${
-                darkMode ? "text-gray-400" : "text-gray-600"
-              }`}>
-                Add a payment method to enable automatic charging when you book courts. No need to manually add funds!
-              </p>
               <PaymentMethodManager 
                 userId={userData.id}
                 darkMode={darkMode}

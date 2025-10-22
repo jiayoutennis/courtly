@@ -296,7 +296,19 @@ export default function SubscriptionPage() {
                 </p>
               </div>
             </div>
-            <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
+            <div className="flex items-center gap-3 sm:gap-4">
+              <Link
+                href="/dashboard"
+                className={`text-xs sm:text-sm font-light ${
+                  darkMode
+                    ? "text-gray-400 hover:text-white"
+                    : "text-gray-600 hover:text-black"
+                } transition-colors`}
+              >
+                Dashboard
+              </Link>
+              <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
+            </div>
           </div>
         </div>
       </header>

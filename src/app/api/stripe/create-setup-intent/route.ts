@@ -22,9 +22,9 @@ export async function POST(request: NextRequest) {
     const stripe = getStripe();
     const { userId, clubId } = await request.json();
 
-    if (!userId || !clubId) {
+    if (!userId) {
       return NextResponse.json(
-        { error: 'Missing userId or clubId' },
+        { error: 'Missing userId' },
         { status: 400 }
       );
     }
@@ -63,13 +63,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Setup Intent
+    const metadata: Record<string, string> = {
+      userId: userId,
+    };
+    
+    // Add clubId to metadata only if provided
+    if (clubId) {
+      metadata.clubId = clubId;
+    }
+
     const setupIntent = await stripe.setupIntents.create({
       customer: stripeCustomerId,
       payment_method_types: ['card'],
-      metadata: {
-        userId: userId,
-        clubId: clubId,
-      },
+      metadata,
     });
 
     return NextResponse.json({

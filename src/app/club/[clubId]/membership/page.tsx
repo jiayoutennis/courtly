@@ -276,7 +276,7 @@ export default function ClubMembershipPage() {
           {/* Action buttons */}
           <div className="flex flex-col gap-2">
             <Link
-              href={`/club/${clubId}/my-bookings`}
+              href="/my-bookings"
               className={`px-4 py-2 text-xs uppercase tracking-wider font-light text-center transition ${
                 darkMode
                   ? 'border border-white text-white hover:bg-white hover:text-black'
@@ -325,16 +325,25 @@ export default function ClubMembershipPage() {
               COURTLY
             </Link>
           </div>
-          <button
-            onClick={() => {
-              setDarkMode(!darkMode);
-              localStorage.setItem("darkMode", (!darkMode).toString());
-            }}
-            className={`p-2 rounded transition-colors ${
-              darkMode ? "hover:bg-[#1a1a1a]" : "hover:bg-gray-100"
-            }`}
-            aria-label="Toggle dark mode"
-          >
+          <div className="flex items-center gap-4">
+            <Link
+              href="/dashboard"
+              className={`text-sm font-light ${
+                darkMode ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
+              } transition-colors`}
+            >
+              Dashboard
+            </Link>
+            <button
+              onClick={() => {
+                setDarkMode(!darkMode);
+                localStorage.setItem("darkMode", (!darkMode).toString());
+              }}
+              className={`p-2 rounded transition-colors ${
+                darkMode ? "hover:bg-[#1a1a1a]" : "hover:bg-gray-100"
+              }`}
+              aria-label="Toggle dark mode"
+            >
             {darkMode ? (
               <svg className="w-5 h-5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
                 <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>

@@ -12,6 +12,7 @@ import {
   doc, 
   getDoc, 
   updateDoc,
+  setDoc,
   deleteDoc,
   serverTimestamp
 } from "firebase/firestore";
@@ -433,12 +434,40 @@ export default function ManageMembersPage() {
     setSuccessMessage("");
 
     try {
+      // Update user type to coach
       await updateDoc(doc(db, "users", memberId), {
         userType: "coach",
         updatedAt: serverTimestamp()
       });
 
-      setSuccessMessage(`${memberEmail} is now a coach with unrestricted booking privileges`);
+      // Add to coaches collection with default pricing
+      await setDoc(doc(db, `orgs/${clubId}/coaches`, memberId), {
+        userId: memberId,
+        email: memberEmail,
+        name: memberEmail, // Will be updated when coach sets their profile
+        hourlyRate: 50, // Default hourly rate - can be changed by admin
+        isActive: true,
+        specialties: [],
+        bio: "",
+        phone: "",
+        profileImage: "",
+        age: null,
+        gender: null,
+        birthday: null,
+        availability: {
+          monday: { start: "09:00", end: "17:00", available: true },
+          tuesday: { start: "09:00", end: "17:00", available: true },
+          wednesday: { start: "09:00", end: "17:00", available: true },
+          thursday: { start: "09:00", end: "17:00", available: true },
+          friday: { start: "09:00", end: "17:00", available: true },
+          saturday: { start: "09:00", end: "17:00", available: true },
+          sunday: { start: "09:00", end: "17:00", available: true }
+        },
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      setSuccessMessage(`${memberEmail} is now a coach with unrestricted booking privileges. Default hourly rate set to $50.`);
       
       // Update in members list
       setMembers(prev => prev.map(member => 

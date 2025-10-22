@@ -43,3 +43,6 @@ next-env.d.ts
 # firebase
 firebase-service-account.json
 courtly-by-jiayou-tennis-firebase-adminsdk-fbsvc-220bf9c91d.json
+
+# helper scripts (temporary)
+minify-json.js

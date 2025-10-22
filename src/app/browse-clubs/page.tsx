@@ -179,16 +179,28 @@ export default function BrowseClubsPage() {
         <div className="container mx-auto">
           <div className="flex justify-between items-center">
             <h1 className="text-xs uppercase tracking-wider font-light">Browse Tennis Clubs</h1>
-            <Link
-              href="/"
-              className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
-                darkMode
-                  ? "border border-white text-white hover:bg-white hover:text-black"
-                  : "border border-black text-black hover:bg-black hover:text-white"
-              }`}
-            >
-              Back to Home
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/dashboard"
+                className={`text-xs sm:text-sm font-light ${
+                  darkMode
+                    ? "text-gray-400 hover:text-white"
+                    : "text-gray-600 hover:text-black"
+                } transition-colors`}
+              >
+                Dashboard
+              </Link>
+              <Link
+                href="/"
+                className={`px-4 py-3 text-xs uppercase tracking-wider font-light transition ${
+                  darkMode
+                    ? "border border-white text-white hover:bg-white hover:text-black"
+                    : "border border-black text-black hover:bg-black hover:text-white"
+                }`}
+              >
+                Back to Home
+              </Link>
+            </div>
           </div>
         </div>
       </header>

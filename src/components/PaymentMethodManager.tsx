@@ -67,7 +67,7 @@ function SetupForm({ userId: _userId, clubId: _clubId, onSuccess }: { userId: st
       <button
         type="submit"
         disabled={!stripe || processing}
-        className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+        className="w-full border border-black text-black px-4 py-3 hover:bg-black hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-light text-sm"
       >
         {processing ? 'Saving...' : 'Save Card'}
       </button>
@@ -185,40 +185,53 @@ export default function PaymentMethodManager({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className={`border p-6 ${darkMode ? 'bg-[#0a0a0a] border-[#1a1a1a]' : 'bg-white border-gray-100'}`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-4 h-4 border-2 ${darkMode ? 'border-white' : 'border-black'} border-t-transparent rounded-full animate-spin`}></div>
+          <p className={`text-sm font-light ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+            Loading payment methods...
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className={`border p-6 ${darkMode ? 'bg-[#0a0a0a] border-[#1a1a1a]' : 'bg-white border-gray-100'}`}>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+      <div className="flex items-center justify-between mb-6">
+        <h3 className={`text-xs uppercase tracking-wider font-light ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
           Payment Methods
         </h3>
         {!showAddCard && (
           <button
             onClick={handleAddCard}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            className={`px-4 py-2 text-sm font-light transition-colors ${
+              darkMode
+                ? 'border border-white text-white hover:bg-white hover:text-black'
+                : 'border border-black text-black hover:bg-black hover:text-white'
+            }`}
           >
-            + Add Card
+            Add Card
           </button>
         )}
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+        <div className={`mb-6 p-4 border text-sm font-light ${
+          darkMode 
+            ? 'bg-red-900/20 text-red-400 border-red-900/30' 
+            : 'bg-red-50 text-red-600 border-red-100'
+        }`}>
           {error}
         </div>
       )}
 
       {/* Add Card Form */}
       {showAddCard && clientSecret && (
-        <div className={`p-6 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        <div className={`p-6 mb-6 border-t ${darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'}`}>
           <div className="mb-4 flex items-center justify-between">
-            <h4 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            <h4 className={`text-sm font-light ${darkMode ? 'text-white' : 'text-black'}`}>
               Add New Card
             </h4>
             <button
@@ -226,7 +239,7 @@ export default function PaymentMethodManager({
                 setShowAddCard(false);
                 setClientSecret(null);
               }}
-              className={`text-sm ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-700'}`}
+              className={`text-sm font-light ${darkMode ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-black'}`}
             >
               Cancel
             </button>
@@ -239,59 +252,53 @@ export default function PaymentMethodManager({
 
       {/* Payment Methods List */}
       {paymentMethods.length === 0 && !showAddCard ? (
-        <div className={`text-center py-8 px-4 rounded-lg border-2 border-dashed ${darkMode ? 'border-gray-700 text-gray-400' : 'border-gray-300 text-gray-600'}`}>
-          <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-          </svg>
-          <p className="mb-4">No payment methods saved</p>
+        <div className={`text-center py-8 px-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+          <p className="text-sm font-light mb-4">No payment methods saved</p>
           <button
             onClick={handleAddCard}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            className={`px-6 py-2 text-sm font-light transition-colors ${
+              darkMode
+                ? 'border border-white text-white hover:bg-white hover:text-black'
+                : 'border border-black text-black hover:bg-black hover:text-white'
+            }`}
           >
             Add Your First Card
           </button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className={`space-y-3 border-t pt-6 ${darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'}`}>
           {paymentMethods.map((pm) => (
             <div
               key={pm.id}
-              className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}
+              className={`p-4 border ${darkMode ? 'border-[#1a1a1a]' : 'border-gray-100'}`}
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                    </svg>
+                <div>
+                  <div className={`font-light ${darkMode ? 'text-white' : 'text-black'}`}>
+                    {pm.brand.charAt(0).toUpperCase() + pm.brand.slice(1)} •••• {pm.last4}
                   </div>
-                  <div>
-                    <div className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {pm.brand.charAt(0).toUpperCase() + pm.brand.slice(1)} •••• {pm.last4}
-                    </div>
-                    <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      Expires {pm.expMonth}/{pm.expYear}
-                      {pm.isDefault && (
-                        <span className="ml-2 text-blue-600 font-medium">Default</span>
-                      )}
-                    </div>
+                  <div className={`text-sm font-light mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Expires {pm.expMonth}/{pm.expYear}
+                    {pm.isDefault && (
+                      <span className="ml-2">• Default</span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {!pm.isDefault && (
                     <button
                       onClick={() => handleSetDefault(pm.id)}
-                      className={`text-sm px-3 py-1 rounded ${darkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}
+                      className={`text-sm font-light px-3 py-1 transition-colors ${darkMode ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-black'}`}
                     >
                       Set Default
                     </button>
                   )}
                   <button
                     onClick={() => handleRemoveCard(pm.id)}
-                    className="text-red-600 hover:text-red-700 p-2 rounded hover:bg-red-50"
+                    className={`p-2 transition-colors ${darkMode ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-black'}`}
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
                   </button>
                 </div>
@@ -302,16 +309,13 @@ export default function PaymentMethodManager({
       )}
 
       {/* Info Box */}
-      <div className={`p-4 rounded-lg ${darkMode ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200'}`}>
-        <div className="flex items-start gap-3">
-          <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
-            <p className="font-medium mb-1">Automatic Charging</p>
-            <p>When you book a court, your default payment method will be automatically charged. No need to manually add funds!</p>
-          </div>
-        </div>
+      <div className={`mt-6 p-4 border text-sm font-light ${
+        darkMode 
+          ? 'bg-blue-900/20 border-blue-900/30 text-blue-400' 
+          : 'bg-blue-50 border-blue-100 text-blue-700'
+      }`}>
+        <p className="font-medium mb-1">Automatic Charging</p>
+        <p>When you book a court, your default payment method will be automatically charged. No need to manually add funds!</p>
       </div>
     </div>
   );

@@ -534,8 +534,61 @@ export default function CourtSchedulePage() {
         }
       }
 
+      // Ensure user is a member of the club (add to organization field if not already)
+      const userDocRef = doc(db, 'users', currentUserId);
+      const userDoc = await getDoc(userDocRef);
+      
+      console.log('📋 Checking user membership for userId:', currentUserId, 'clubId:', clubId);
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const currentOrg = userData.organization || [];
+        
+        console.log('Current user organization field:', currentOrg);
+        
+        // Check if user is already a member
+        let isMember = false;
+        if (Array.isArray(currentOrg)) {
+          isMember = currentOrg.includes(clubId);
+        } else if (typeof currentOrg === 'string') {
+          isMember = currentOrg === clubId;
+        }
+        
+        console.log('Is user already a member?', isMember);
+        
+        // Add user to club if not already a member
+        if (!isMember) {
+          let updatedOrg: string[];
+          if (Array.isArray(currentOrg)) {
+            updatedOrg = [...currentOrg, clubId];
+          } else if (typeof currentOrg === 'string') {
+            updatedOrg = [currentOrg, clubId];
+          } else {
+            updatedOrg = [clubId];
+          }
+          
+          console.log('Updating organization field to:', updatedOrg);
+          
+          await updateDoc(userDocRef, {
+            organization: updatedOrg
+          });
+          
+          console.log('✅ Successfully added user to club organization:', clubId);
+          
+          // Verify the update
+          const verifyDoc = await getDoc(userDocRef);
+          if (verifyDoc.exists()) {
+            console.log('✅ Verified - user organization field is now:', verifyDoc.data().organization);
+          }
+        } else {
+          console.log('✅ User is already a member of this club');
+        }
+      } else {
+        console.error('❌ User document not found for userId:', currentUserId);
+      }
+      
       // Create booking with adjusted end time
-      await addDoc(collection(db, `orgs/${clubId}/bookings`), {
+      const bookingData_toSave = {
         courtId: bookingData.courtId,
         courtName: bookingData.courtName,
         date: bookingData.date,
@@ -549,7 +602,11 @@ export default function CourtSchedulePage() {
         status: "confirmed",
         cost: bookingCost, // Store the cost
         paid: false // Will be paid later via account balance
-      });
+      };
+      
+      console.log('Creating booking in orgs/' + clubId + '/bookings with data:', bookingData_toSave);
+      const bookingRef = await addDoc(collection(db, `orgs/${clubId}/bookings`), bookingData_toSave);
+      console.log('✅ Booking created successfully with ID:', bookingRef.id);
 
       // Charge booking using automatic payment or add to balance
       if (bookingCost > 0 && !isCoach && !isAdmin) {
@@ -630,34 +687,26 @@ export default function CourtSchedulePage() {
         refundAmount = bookingData.cost || 0;
       }
 
-      // Staff and admins can delete, regular members update status to "cancelled"
-      if (isAdmin || isCoach) {
-        // Delete the booking (staff/admin only)
-        await deleteDoc(doc(db, `orgs/${clubId}/bookings`, selectedBooking.id));
-      } else {
-        // Regular members: update status to "cancelled" instead of deleting
-        await updateDoc(doc(db, `orgs/${clubId}/bookings`, selectedBooking.id), {
-          status: "cancelled",
-          cancelledAt: serverTimestamp()
-        });
+      // Process refund before deleting the booking
+      if (refundAmount > 0 && currentUserId && !isAdmin && !isCoach) {
+        await refundBookingToBalance(
+          currentUserId,
+          clubId,
+          refundAmount,
+          selectedBooking.id,
+          `Refund: ${selectedBooking.courtId} - ${selectedBooking.date} ${selectedBooking.startTime}`
+        );
         
-        // Refund the cost to the user's balance if there was a charge
-        if (refundAmount > 0 && currentUserId) {
-          await refundBookingToBalance(
-            currentUserId,
-            clubId,
-            refundAmount,
-            selectedBooking.id,
-            `Refund: ${selectedBooking.courtId} - ${selectedBooking.date} ${selectedBooking.startTime}`
-          );
-          
-          // Refresh balance
-          const newBalance = await getAccountBalance(currentUserId, clubId);
-          setAccountBalance(newBalance);
-          
-          console.log(`Refunded ${formatBalance(refundAmount)} to account. New balance: ${formatBalance(newBalance)}`);
-        }
+        // Refresh balance
+        const newBalance = await getAccountBalance(currentUserId, clubId);
+        setAccountBalance(newBalance);
+        
+        console.log(`Refunded ${formatBalance(refundAmount)} to account. New balance: ${formatBalance(newBalance)}`);
       }
+      
+      // Delete the booking entirely to save database space
+      await deleteDoc(doc(db, `orgs/${clubId}/bookings`, selectedBooking.id));
+      console.log('✅ Booking deleted from database:', selectedBooking.id);
 
       if (refundAmount > 0 && !isAdmin && !isCoach) {
         setSuccess(`Booking cancelled! ${formatBalance(refundAmount)} refunded to your account.`);

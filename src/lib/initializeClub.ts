@@ -270,7 +270,7 @@ export async function approveClub(clubId: string): Promise<void> {
 }
 
 /**
- * Initialize empty subcollections for bookings, blocks, and audit logs
+ * Initialize empty subcollections for bookings, blocks, audit logs, and coaches
  * These will be populated as operations occur
  */
 async function initializeEmptyCollections(clubId: string): Promise<void> {
@@ -296,6 +296,20 @@ async function initializeEmptyCollections(clubId: string): Promise<void> {
   const auditRef = doc(db, `orgs/${clubId}/audit/_placeholder`);
   await setDoc(auditRef, {
     note: "This is a placeholder document. Audit logs will be created automatically.",
+    createdAt: now
+  });
+  
+  // Create a placeholder document in coaches collection
+  const coachesRef = doc(db, `orgs/${clubId}/coaches/_placeholder`);
+  await setDoc(coachesRef, {
+    note: "This is a placeholder document. Coaches will be added by club admins.",
+    createdAt: now
+  });
+  
+  // Create a placeholder document in groupLessons collection
+  const groupLessonsRef = doc(db, `orgs/${clubId}/groupLessons/_placeholder`);
+  await setDoc(groupLessonsRef, {
+    note: "This is a placeholder document. Group lessons will be created by club admins.",
     createdAt: now
   });
   

@@ -60,11 +60,19 @@ export default function WebhookLogsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-8">
+    <div className="min-h-screen bg-black text-white">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-4xl font-light mb-8 border-b border-white pb-4">
-          📋 Webhook Logs
-        </h1>
+        <div className="flex items-center justify-between p-8 pb-0 mb-8">
+          <h1 className="text-4xl font-light border-b border-white pb-4">
+            📋 Webhook Logs
+          </h1>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="text-sm font-light text-gray-400 hover:text-white transition-colors border border-white px-4 py-2 hover:bg-white hover:text-black"
+          >
+            Dashboard
+          </button>
+        </div>
 
         <div className="mb-6 p-4 border border-yellow-500 rounded bg-yellow-500/10">
           <p className="text-sm text-gray-300">
