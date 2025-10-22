@@ -24,11 +24,18 @@ if (!getApps().length) {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
     try {
       const serviceAccountPath = path.resolve(process.cwd(), process.env.FIREBASE_SERVICE_ACCOUNT_PATH);
-      const fileContents = fs.readFileSync(serviceAccountPath, 'utf8');
-      serviceAccount = JSON.parse(fileContents);
-      console.log('✅ Loaded service account from file');
+      if (fs.existsSync(serviceAccountPath)) {
+        const fileContents = fs.readFileSync(serviceAccountPath, 'utf8');
+        serviceAccount = JSON.parse(fileContents);
+        console.log('✅ Loaded service account from file');
+      } else {
+        // Only log during development, not during build
+        if (process.env.NODE_ENV !== 'production' || process.env.NEXT_PHASE) {
+          console.log('Service account file not found, skipping file-based initialization');
+        }
+      }
     } catch (error) {
-      console.error('Failed to load service account from file:', error);
+      console.log('Failed to load service account from file:', error instanceof Error ? error.message : String(error));
     }
   }
   
@@ -52,9 +59,12 @@ if (!getApps().length) {
     console.log('✅ Firebase Admin initialized with service account');
   } else {
     // Fallback: Basic initialization (won't work for webhooks in production)
-    console.warn('⚠️  No service account credentials found. Webhook updates will fail.');
-    console.warn('Set FIREBASE_SERVICE_ACCOUNT_PATH to the path of your service account JSON file');
-    console.warn('Or set FIREBASE_SERVICE_ACCOUNT with minified JSON string');
+    // Only show warnings in production or when explicitly building for production
+    if (process.env.NODE_ENV === 'production' && !process.env.NEXT_PHASE) {
+      console.warn('⚠️  No service account credentials found. Webhook updates will fail.');
+      console.warn('Set FIREBASE_SERVICE_ACCOUNT_PATH to the path of your service account JSON file');
+      console.warn('Or set FIREBASE_SERVICE_ACCOUNT with minified JSON string');
+    }
     adminApp = initializeApp({
       projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'courtly-by-jiayou-tennis',
     });
