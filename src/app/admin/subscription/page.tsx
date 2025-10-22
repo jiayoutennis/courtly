@@ -208,12 +208,13 @@ export default function SubscriptionPage() {
         throw new Error('Stripe failed to load');
       }
 
-      const { error: stripeError } = await stripe.redirectToCheckout({
+      // Type assertion for redirectToCheckout which exists on Stripe instance
+      const result = await (stripe as any).redirectToCheckout({
         sessionId: data.sessionId,
       });
 
-      if (stripeError) {
-        throw new Error(stripeError.message);
+      if (result?.error) {
+        throw new Error(result.error.message);
       }
     } catch (err) {
       console.error('Error selecting plan:', err);
