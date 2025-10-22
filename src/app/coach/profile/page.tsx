@@ -6,7 +6,7 @@ import Link from "next/link";
 import { auth, db } from "../../../../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { 
-  doc, getDoc, updateDoc, collection, getDocs, query, where,
+  doc, getDoc, updateDoc,
   serverTimestamp
 } from "firebase/firestore";
 import DarkModeToggle from "@/app/components/DarkModeToggle";
@@ -27,9 +27,9 @@ interface CoachProfile {
   birthday: string | null;
   availability: {
     [key: string]: {
-      start: string;
-      end: string;
-      available: boolean;
+      start?: string;
+      end?: string;
+      available?: boolean;
     };
   };
   createdAt: any;
@@ -244,7 +244,6 @@ export default function CoachProfilePage() {
       <div className="px-4 sm:px-6 md:px-12 py-6 sm:py-8">
         <PageTitle 
           title="Coach Profile" 
-          subtitle="Manage your coaching information and availability"
         />
 
         {/* Error/Success Messages */}

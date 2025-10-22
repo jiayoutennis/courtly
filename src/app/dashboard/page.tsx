@@ -15,7 +15,7 @@ interface UserData {
   id: string;
   fullName?: string;
   email: string;
-  userType: 'admin' | 'member' | 'courtly';
+  userType: 'admin' | 'member' | 'courtly' | 'coach';
   club?: {
     name: string;
     address: string;

@@ -354,6 +354,7 @@ export default function ClubMembershipPage() {
               </svg>
             )}
           </button>
+          </div>
         </div>
       </header>
 

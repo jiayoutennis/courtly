@@ -6,8 +6,7 @@ import Link from "next/link";
 import { auth, db } from "../../../../../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { 
-  doc, getDoc, collection, getDocs, query, where, addDoc, 
-  updateDoc, deleteDoc, serverTimestamp
+  doc, getDoc, collection, getDocs, query, where
 } from "firebase/firestore";
 import DarkModeToggle from "@/app/components/DarkModeToggle";
 import PageTitle from "@/app/components/PageTitle";
@@ -50,22 +49,6 @@ interface GroupLesson {
   createdAt: string;
 }
 
-interface PrivateLessonRequest {
-  id: string;
-  memberId: string;
-  memberName: string;
-  coachId: string;
-  coachName: string;
-  preferredDate: string;
-  preferredTime: string;
-  duration: number; // in hours
-  notes: string;
-  status: 'pending' | 'confirmed' | 'declined' | 'completed' | 'cancelled';
-  requestedAt: string;
-  confirmedAt?: string;
-  courtBookingId?: string;
-  paymentRequestId?: string;
-}
 
 export default function LessonsPage() {
   const params = useParams();
@@ -75,7 +58,6 @@ export default function LessonsPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [currentUserId, setCurrentUserId] = useState<string>("");
   const [clubInfo, setClubInfo] = useState<any>(null);
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [groupLessons, setGroupLessons] = useState<GroupLesson[]>([]);
@@ -98,7 +80,6 @@ export default function LessonsPage() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
-        setCurrentUserId(user.uid);
       } else {
         router.push(`/signin?redirect=/club/${clubId}/lessons`);
       }
@@ -192,14 +173,14 @@ export default function LessonsPage() {
     }
   };
 
-  const handlePrivateLessonRequest = async (coachId: string, coachName: string) => {
+  const handlePrivateLessonRequest = async (_coachId: string, coachName: string) => {
     // This will open a modal for lesson request details
     // For now, just show a placeholder
     setSuccess(`Lesson request for ${coachName} will be implemented soon!`);
     setTimeout(() => setSuccess(""), 3000);
   };
 
-  const handleGroupLessonRegistration = async (lessonId: string) => {
+  const handleGroupLessonRegistration = async (_lessonId: string) => {
     // This will handle group lesson registration and payment
     setSuccess("Group lesson registration will be implemented soon!");
     setTimeout(() => setSuccess(""), 3000);
@@ -273,7 +254,6 @@ export default function LessonsPage() {
       <div className="px-4 sm:px-6 md:px-12 py-6 sm:py-8">
         <PageTitle 
           title="Lessons & Classes" 
-          subtitle={`Private lessons and group classes at ${clubInfo?.name || "this club"}`}
         />
 
         {/* Error/Success Messages */}
