@@ -5,21 +5,40 @@
 
 import Stripe from 'stripe';
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('STRIPE_SECRET_KEY is not set in environment variables');
+let stripeInstance: Stripe | null = null;
+
+/**
+ * Get Stripe server instance
+ * Lazily initializes Stripe only when needed (prevents build-time errors)
+ */
+export function getStripeInstance(): Stripe {
+  if (!stripeInstance) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error('STRIPE_SECRET_KEY is not set in environment variables');
+    }
+    
+    stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2023-10-16',
+      typescript: true,
+      appInfo: {
+        name: 'Courtly',
+        version: '1.0.0',
+      },
+    });
+  }
+  
+  return stripeInstance;
 }
 
 /**
  * Stripe server instance
  * Used for all server-side Stripe operations
+ * @deprecated Use getStripeInstance() instead for lazy initialization
  */
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
-  typescript: true,
-  appInfo: {
-    name: 'Courtly',
-    version: '1.0.0',
-  },
+export const stripe = new Proxy({} as Stripe, {
+  get(_target, prop) {
+    return (getStripeInstance() as any)[prop];
+  }
 });
 
 /**

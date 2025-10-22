@@ -2,9 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { adminDb } from '@/lib/firebase-admin';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-09-30.clover' as any,
-});
+// Lazy initialization to prevent build-time errors
+let stripeInstance: Stripe | null = null;
+function getStripe(): Stripe {
+  if (!stripeInstance) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error('STRIPE_SECRET_KEY is not set');
+    }
+    stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2025-09-30.clover' as any,
+    });
+  }
+  return stripeInstance;
+}
 
 /**
  * Get user's saved payment methods
@@ -43,6 +53,7 @@ export async function GET(request: NextRequest) {
 
     // Try to get customer to verify it exists
     try {
+      const stripe = getStripe();
       const customer = await stripe.customers.retrieve(stripeCustomerId);
       
       // If customer was deleted, clear the customer ID
@@ -140,6 +151,7 @@ export async function DELETE(request: NextRequest) {
 
     // Verify customer exists before detaching payment method
     try {
+      const stripe = getStripe();
       const customer = await stripe.customers.retrieve(stripeCustomerId);
       
       if (customer.deleted) {
@@ -220,6 +232,7 @@ export async function PATCH(request: NextRequest) {
 
     // Verify customer exists before updating
     try {
+      const stripe = getStripe();
       const customer = await stripe.customers.retrieve(stripeCustomerId);
       
       if (customer.deleted) {
