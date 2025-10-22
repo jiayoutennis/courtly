@@ -49,10 +49,30 @@ export async function POST(request: NextRequest) {
     }
 
     // Get customer's default payment method
-    const customer = await stripe.customers.retrieve(stripeCustomerId);
+    let customer;
+    try {
+      customer = await stripe.customers.retrieve(stripeCustomerId);
+    } catch (stripeError: any) {
+      // If customer doesn't exist in Stripe, clear the invalid customer ID
+      if (stripeError.type === 'StripeInvalidRequestError' && 
+          stripeError.code === 'resource_missing') {
+        await adminDb.collection('users').doc(userId).update({
+          stripeCustomerId: null,
+        });
+        return NextResponse.json(
+          { error: 'Customer account not found. Please add a payment method.' },
+          { status: 404 }
+        );
+      }
+      throw stripeError;
+    }
+
     if (customer.deleted) {
+      await adminDb.collection('users').doc(userId).update({
+        stripeCustomerId: null,
+      });
       return NextResponse.json(
-        { error: 'Customer account not found' },
+        { error: 'Customer account not found. Please add a payment method.' },
         { status: 404 }
       );
     }

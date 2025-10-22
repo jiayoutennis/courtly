@@ -41,30 +41,59 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get payment methods from Stripe
-    const paymentMethods = await stripe.paymentMethods.list({
-      customer: stripeCustomerId,
-      type: 'card',
-    });
+    // Try to get customer to verify it exists
+    try {
+      const customer = await stripe.customers.retrieve(stripeCustomerId);
+      
+      // If customer was deleted, clear the customer ID
+      if (customer.deleted) {
+        await adminDb.collection('users').doc(userId).update({
+          stripeCustomerId: null,
+        });
+        return NextResponse.json({
+          paymentMethods: [],
+          defaultPaymentMethod: null,
+        });
+      }
 
-    // Get customer to find default payment method
-    const customer = await stripe.customers.retrieve(stripeCustomerId);
-    let defaultPaymentMethod = null;
-    if (typeof customer === 'object' && 'invoice_settings' in customer) {
-      defaultPaymentMethod = (customer as Stripe.Customer).invoice_settings.default_payment_method;
+      // Get payment methods from Stripe
+      const paymentMethods = await stripe.paymentMethods.list({
+        customer: stripeCustomerId,
+        type: 'card',
+      });
+
+      let defaultPaymentMethod = null;
+      if (typeof customer === 'object' && 'invoice_settings' in customer) {
+        defaultPaymentMethod = (customer as Stripe.Customer).invoice_settings.default_payment_method;
+      }
+
+      return NextResponse.json({
+        paymentMethods: paymentMethods.data.map(pm => ({
+          id: pm.id,
+          brand: pm.card?.brand,
+          last4: pm.card?.last4,
+          expMonth: pm.card?.exp_month,
+          expYear: pm.card?.exp_year,
+          isDefault: pm.id === defaultPaymentMethod,
+        })),
+        defaultPaymentMethod: defaultPaymentMethod,
+      });
+    } catch (stripeError: any) {
+      // If customer doesn't exist in Stripe, clear the invalid customer ID
+      if (stripeError.type === 'StripeInvalidRequestError' && 
+          stripeError.code === 'resource_missing') {
+        console.log(`Clearing invalid Stripe customer ID for user ${userId}`);
+        await adminDb.collection('users').doc(userId).update({
+          stripeCustomerId: null,
+        });
+        return NextResponse.json({
+          paymentMethods: [],
+          defaultPaymentMethod: null,
+        });
+      }
+      // Re-throw other Stripe errors
+      throw stripeError;
     }
-
-    return NextResponse.json({
-      paymentMethods: paymentMethods.data.map(pm => ({
-        id: pm.id,
-        brand: pm.card?.brand,
-        last4: pm.card?.last4,
-        expMonth: pm.card?.exp_month,
-        expYear: pm.card?.exp_year,
-        isDefault: pm.id === defaultPaymentMethod,
-      })),
-      defaultPaymentMethod: defaultPaymentMethod,
-    });
 
   } catch (error: any) {
     console.error('Error fetching payment methods:', error);
@@ -109,13 +138,42 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Detach payment method
-    await stripe.paymentMethods.detach(paymentMethodId);
+    // Verify customer exists before detaching payment method
+    try {
+      const customer = await stripe.customers.retrieve(stripeCustomerId);
+      
+      if (customer.deleted) {
+        await adminDb.collection('users').doc(userId).update({
+          stripeCustomerId: null,
+        });
+        return NextResponse.json(
+          { error: 'Customer account not found' },
+          { status: 404 }
+        );
+      }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Payment method removed',
-    });
+      // Detach payment method
+      await stripe.paymentMethods.detach(paymentMethodId);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Payment method removed',
+      });
+    } catch (stripeError: any) {
+      // If customer doesn't exist in Stripe, clear the invalid customer ID
+      if (stripeError.type === 'StripeInvalidRequestError' && 
+          stripeError.code === 'resource_missing') {
+        await adminDb.collection('users').doc(userId).update({
+          stripeCustomerId: null,
+        });
+        return NextResponse.json(
+          { error: 'Customer account not found' },
+          { status: 404 }
+        );
+      }
+      // Re-throw other Stripe errors
+      throw stripeError;
+    }
 
   } catch (error: any) {
     console.error('Error deleting payment method:', error);
@@ -160,17 +218,46 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Update customer's default payment method
-    await stripe.customers.update(stripeCustomerId, {
-      invoice_settings: {
-        default_payment_method: paymentMethodId,
-      },
-    });
+    // Verify customer exists before updating
+    try {
+      const customer = await stripe.customers.retrieve(stripeCustomerId);
+      
+      if (customer.deleted) {
+        await adminDb.collection('users').doc(userId).update({
+          stripeCustomerId: null,
+        });
+        return NextResponse.json(
+          { error: 'Customer account not found' },
+          { status: 404 }
+        );
+      }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Default payment method updated',
-    });
+      // Update customer's default payment method
+      await stripe.customers.update(stripeCustomerId, {
+        invoice_settings: {
+          default_payment_method: paymentMethodId,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Default payment method updated',
+      });
+    } catch (stripeError: any) {
+      // If customer doesn't exist in Stripe, clear the invalid customer ID
+      if (stripeError.type === 'StripeInvalidRequestError' && 
+          stripeError.code === 'resource_missing') {
+        await adminDb.collection('users').doc(userId).update({
+          stripeCustomerId: null,
+        });
+        return NextResponse.json(
+          { error: 'Customer account not found' },
+          { status: 404 }
+        );
+      }
+      // Re-throw other Stripe errors
+      throw stripeError;
+    }
 
   } catch (error: any) {
     console.error('Error setting default payment method:', error);

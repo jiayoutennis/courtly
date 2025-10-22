@@ -1204,9 +1204,7 @@ export default function CourtSchedulePage() {
                         Current Balance
                       </span>
                       <span className={`text-sm sm:text-base font-medium ${
-                        accountBalance >= 0
-                          ? darkMode ? "text-green-400" : "text-green-600"
-                          : darkMode ? "text-red-400" : "text-red-600"
+                        darkMode ? "text-white" : "text-gray-900"
                       }`}>
                         {formatBalance(accountBalance)}
                       </span>

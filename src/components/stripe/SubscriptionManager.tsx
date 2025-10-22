@@ -17,13 +17,15 @@ interface SubscriptionManagerProps {
   subscription: SubscriptionInfo;
   onUpdate: () => void; // Callback to refresh club data after updates
   isOwner: boolean; // New prop to indicate if current user is the owner
+  darkMode?: boolean;
 }
 
 export default function SubscriptionManager({ 
   clubId, 
   subscription, 
   onUpdate,
-  isOwner 
+  isOwner,
+  darkMode = false
 }: SubscriptionManagerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -149,24 +151,38 @@ export default function SubscriptionManager({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-      <h3 className="text-xl font-semibold mb-4 dark:text-white">
-        Subscription Management
+    <div className={`border p-6 sm:p-8 ${
+      darkMode ? "bg-[#0a0a0a] border-[#1a1a1a]" : "bg-white border-gray-100"
+    }`}>
+      <h3 className={`text-xs uppercase tracking-wider font-light mb-6 ${
+        darkMode ? "text-gray-500" : "text-gray-400"
+      }`}>
+        Current Subscription
       </h3>
 
       {/* Current Plan Info */}
       <div className="mb-6">
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
           <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Current Plan</p>
-            <p className="text-lg font-semibold dark:text-white capitalize">
+            <p className={`text-xs font-light uppercase tracking-wider mb-2 ${
+              darkMode ? "text-gray-600" : "text-gray-400"
+            }`}>
+              Plan
+            </p>
+            <p className={`text-lg font-light capitalize ${
+              darkMode ? "text-white" : "text-black"
+            }`}>
               {subscription.plan}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Status</p>
-            <p className={`text-lg font-semibold ${
-              isActive ? 'text-green-600' : 'text-red-600'
+            <p className={`text-xs font-light uppercase tracking-wider mb-2 ${
+              darkMode ? "text-gray-600" : "text-gray-400"
+            }`}>
+              Status
+            </p>
+            <p className={`text-lg font-light ${
+              darkMode ? "text-white" : "text-black"
             }`}>
               {subscription.status === 'active' && willCancelAtPeriodEnd
                 ? 'Canceling'
@@ -178,15 +194,21 @@ export default function SubscriptionManager({
         </div>
 
         {isPaidPlan && subscription.currentPeriodEnd && (
-          <div className="mb-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+          <div>
+            <p className={`text-xs font-light uppercase tracking-wider mb-2 ${
+              darkMode ? "text-gray-600" : "text-gray-400"
+            }`}>
               {willCancelAtPeriodEnd ? 'Access Until' : 'Next Billing Date'}
             </p>
-            <p className="text-lg dark:text-white">
+            <p className={`text-base font-light ${
+              darkMode ? "text-white" : "text-black"
+            }`}>
               {formatDate(subscription.currentPeriodEnd)}
             </p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              ({getDaysRemaining()} days remaining)
+            <p className={`text-sm font-light mt-1 ${
+              darkMode ? "text-gray-400" : "text-gray-600"
+            }`}>
+              {getDaysRemaining()} days remaining
             </p>
           </div>
         )}
@@ -194,23 +216,35 @@ export default function SubscriptionManager({
 
       {/* Status Messages */}
       {error && (
-        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded">
+        <div className={`mb-6 p-4 border text-sm font-light ${
+          darkMode 
+            ? 'bg-red-900/20 text-red-400 border-red-900/30' 
+            : 'bg-red-50 text-red-600 border-red-100'
+        }`}>
           {error}
         </div>
       )}
       {success && (
-        <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
+        <div className={`mb-6 p-4 border text-sm font-light ${
+          darkMode 
+            ? 'bg-green-900/20 text-green-400 border-green-900/30' 
+            : 'bg-green-50 text-green-600 border-green-100'
+        }`}>
           {success}
         </div>
       )}
 
       {/* Warning if subscription is canceling */}
       {willCancelAtPeriodEnd && (
-        <div className="mb-4 p-4 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded">
-          <p className="text-yellow-800 dark:text-yellow-400 font-semibold mb-2">
-            ⚠️ Subscription Scheduled for Cancellation
+        <div className={`mb-6 p-4 border text-sm font-light ${
+          darkMode 
+            ? 'bg-yellow-900/20 text-yellow-400 border-yellow-900/30' 
+            : 'bg-yellow-50 text-yellow-700 border-yellow-100'
+        }`}>
+          <p className="font-medium mb-2">
+            Subscription Scheduled for Cancellation
           </p>
-          <p className="text-sm text-yellow-700 dark:text-yellow-300">
+          <p>
             Your subscription will be canceled on {formatDate(subscription.currentPeriodEnd)}.
             You will continue to have access to all {subscription.plan} features until then.
             After that, you will be downgraded to the Free plan.
@@ -220,11 +254,15 @@ export default function SubscriptionManager({
 
       {/* Not Owner Warning */}
       {!isOwner && (
-        <div className="mb-4 p-4 bg-blue-100 dark:bg-blue-900/30 border-l-4 border-blue-500 rounded">
-          <p className="text-blue-800 dark:text-blue-400 font-semibold mb-2">
-            ℹ️ Owner Access Required
+        <div className={`mb-6 p-4 border text-sm font-light ${
+          darkMode 
+            ? 'bg-blue-900/20 text-blue-400 border-blue-900/30' 
+            : 'bg-blue-50 text-blue-700 border-blue-100'
+        }`}>
+          <p className="font-medium mb-2">
+            Owner Access Required
           </p>
-          <p className="text-sm text-blue-700 dark:text-blue-300">
+          <p>
             Only the club owner can manage subscriptions. Please contact your club owner to make changes.
           </p>
         </div>
@@ -237,7 +275,11 @@ export default function SubscriptionManager({
             <button
               onClick={handleCancelSubscription}
               disabled={loading}
-              className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`w-full px-4 py-2 text-sm font-light transition-colors ${
+                darkMode
+                  ? "border border-[#1a1a1a] text-gray-400 hover:border-gray-600 hover:text-white disabled:opacity-50"
+                  : "border border-gray-200 text-gray-600 hover:border-gray-400 hover:text-black disabled:opacity-50"
+              }`}
             >
               {loading ? 'Processing...' : 'Cancel Subscription'}
             </button>
@@ -247,7 +289,11 @@ export default function SubscriptionManager({
             <button
               onClick={handleReactivateSubscription}
               disabled={loading}
-              className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`w-full px-4 py-2 text-sm font-light transition-colors ${
+                darkMode
+                  ? "border border-white text-white hover:bg-white hover:text-black disabled:opacity-50"
+                  : "border border-black text-black hover:bg-black hover:text-white disabled:opacity-50"
+              }`}
             >
               {loading ? 'Processing...' : 'Reactivate Subscription'}
             </button>
@@ -255,12 +301,18 @@ export default function SubscriptionManager({
 
           {subscription.plan === 'free' && (
             <div className="text-center">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+              <p className={`text-sm font-light mb-4 ${
+                darkMode ? "text-gray-400" : "text-gray-600"
+              }`}>
                 Upgrade to unlock more features
               </p>
               <a
                 href={`/club/${clubId}`}
-                className="inline-block px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                className={`inline-block px-6 py-2 text-sm font-light transition-colors ${
+                  darkMode
+                    ? "border border-white text-white hover:bg-white hover:text-black"
+                    : "border border-black text-black hover:bg-black hover:text-white"
+                }`}
               >
                 View Plans
               </a>
@@ -270,11 +322,17 @@ export default function SubscriptionManager({
       )}
 
       {/* Plan Features Summary */}
-      <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-          Current Features:
+      <div className={`mt-6 pt-6 border-t ${
+        darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+      }`}>
+        <p className={`text-xs font-light uppercase tracking-wider mb-3 ${
+          darkMode ? "text-gray-600" : "text-gray-400"
+        }`}>
+          Current Features
         </p>
-        <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+        <ul className={`text-sm font-light space-y-2 ${
+          darkMode ? "text-gray-400" : "text-gray-600"
+        }`}>
           {subscription.plan === 'free' && (
             <>
               <li>• 1 court</li>

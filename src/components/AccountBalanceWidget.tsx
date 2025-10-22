@@ -91,9 +91,6 @@ export default function AccountBalanceWidget({ clubId, darkMode = false }: Accou
     );
   }
 
-  const isNegative = balance < 0;
-  const isLow = balance < 2000 && balance >= 0; // Less than $20
-
   return (
     <div className={`border ${
       darkMode ? "border-[#1a1a1a] bg-[#0a0a0a]" : "border-gray-100 bg-white"
@@ -116,24 +113,10 @@ export default function AccountBalanceWidget({ clubId, darkMode = false }: Accou
 
         <div className="mb-4">
           <div className={`text-3xl font-light ${
-            isNegative 
-              ? "text-red-500" 
-              : isLow 
-              ? "text-yellow-500" 
-              : darkMode ? "text-white" : "text-black"
+            darkMode ? "text-white" : "text-black"
           }`}>
             {formatBalance(balance)}
           </div>
-          {isNegative && (
-            <p className="text-sm text-red-500 mt-1">
-              Amount owed
-            </p>
-          )}
-          {isLow && !isNegative && (
-            <p className="text-sm text-yellow-500 mt-1">
-              Low balance
-            </p>
-          )}
         </div>
 
         {/* Action Buttons */}

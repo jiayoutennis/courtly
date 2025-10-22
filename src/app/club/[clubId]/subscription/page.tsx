@@ -195,12 +195,13 @@ export default function SubscriptionPage() {
         throw new Error('Stripe failed to load');
       }
 
-      const { error: stripeError } = await stripe.redirectToCheckout({
+      // Type assertion for redirectToCheckout which exists on Stripe instance
+      const result = await (stripe as any).redirectToCheckout({
         sessionId: data.sessionId,
       });
 
-      if (stripeError) {
-        throw new Error(stripeError.message);
+      if (result?.error) {
+        throw new Error(result.error.message);
       }
     } catch (err) {
       console.error('Error selecting plan:', err);
@@ -263,26 +264,31 @@ export default function SubscriptionPage() {
       <PageTitle title={`Subscription - ${orgData?.name || 'Club'} - Courtly`} />
       
       {/* Header */}
-      <div className={`border-b ${
+      <header className={`border-b ${
         darkMode ? "border-[#1a1a1a]" : "border-gray-100"
       }`}>
-        <div className="max-w-6xl mx-auto px-6 py-6">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               <Link
                 href={`/club/${clubIdFromUrl}`}
-                className={`p-2 ${
+                className={`p-2 transition-colors ${
                   darkMode
-                    ? "hover:bg-[#1a1a1a]"
-                    : "hover:bg-gray-100"
+                    ? "hover:bg-[#1a1a1a] text-gray-400 hover:text-white"
+                    : "hover:bg-gray-100 text-gray-600 hover:text-black"
                 }`}
+                aria-label="Back to club"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
                 </svg>
               </Link>
               <div>
-                <h1 className="text-2xl font-light">Subscription Management</h1>
+                <h1 className={`text-xl sm:text-2xl font-light ${
+                  darkMode ? "text-white" : "text-black"
+                }`}>
+                  Subscription Management
+                </h1>
                 <p className={`text-sm font-light ${
                   darkMode ? "text-gray-400" : "text-gray-600"
                 }`}>
@@ -293,22 +299,26 @@ export default function SubscriptionPage() {
             <DarkModeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-6 py-12">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {/* Success/Error Messages */}
         {error && !loading && (
-          <div className={`mb-6 p-4 rounded text-sm font-light ${
-            darkMode ? 'text-red-400 bg-red-900/20' : 'text-red-600 bg-red-50'
+          <div className={`mb-6 p-4 border text-sm font-light ${
+            darkMode 
+              ? 'bg-red-900/20 text-red-400 border-red-900/30' 
+              : 'bg-red-50 text-red-600 border-red-100'
           }`}>
             {error}
           </div>
         )}
 
         {success && (
-          <div className={`mb-6 p-4 rounded text-sm font-light ${
-            darkMode ? 'text-green-400 bg-green-900/20' : 'text-green-600 bg-green-50'
+          <div className={`mb-6 p-4 border text-sm font-light ${
+            darkMode 
+              ? 'bg-green-900/20 text-green-400 border-green-900/30' 
+              : 'bg-green-50 text-green-600 border-green-100'
           }`}>
             {success}
           </div>
@@ -322,15 +332,20 @@ export default function SubscriptionPage() {
               subscription={orgData.subscription}
               onUpdate={fetchClubData}
               isOwner={isOwner}
+              darkMode={darkMode}
             />
           </div>
         ) : (
-          <div className={`mb-8 p-8 rounded-lg text-center ${
-            darkMode ? "bg-[#1a1a1a]" : "bg-gray-50"
+          <div className={`mb-8 p-6 sm:p-8 border text-center ${
+            darkMode ? "bg-[#0a0a0a] border-[#1a1a1a]" : "bg-white border-gray-100"
           }`}>
             <div className="text-4xl mb-4">📊</div>
-            <h2 className="text-xl font-light mb-2">No Subscription Information</h2>
-            <p className={`font-light mb-4 ${
+            <h2 className={`text-lg sm:text-xl font-light mb-2 ${
+              darkMode ? "text-white" : "text-gray-900"
+            }`}>
+              No Subscription Information
+            </h2>
+            <p className={`text-sm font-light ${
               darkMode ? "text-gray-400" : "text-gray-600"
             }`}>
               This club doesn't have subscription data yet. Choose a plan below to get started.
@@ -340,8 +355,8 @@ export default function SubscriptionPage() {
 
         {/* Available Plans Section */}
         <div>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className={`text-xl font-light ${
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <h2 className={`text-lg sm:text-xl font-light ${
               darkMode ? 'text-white' : 'text-gray-900'
             }`}>
               {orgData?.subscription?.plan === 'free' ? 'Upgrade Your Plan' : 'Change Plan'}
@@ -349,7 +364,7 @@ export default function SubscriptionPage() {
             {!showPlans && orgData?.subscription && orgData.subscription.plan !== 'free' && (
               <button
                 onClick={() => setShowPlans(!showPlans)}
-                className={`text-sm font-light px-4 py-2 rounded transition-colors ${
+                className={`text-xs sm:text-sm font-light px-3 sm:px-4 py-2 transition-colors ${
                   darkMode
                     ? 'text-gray-400 hover:text-white hover:bg-[#1a1a1a]'
                     : 'text-gray-600 hover:text-black hover:bg-gray-100'
@@ -370,8 +385,10 @@ export default function SubscriptionPage() {
               />
               
               {/* Info Box */}
-              <div className={`mt-8 p-4 rounded text-sm font-light ${
-                darkMode ? 'bg-blue-900/20 text-blue-400' : 'bg-blue-50 text-blue-700'
+              <div className={`mt-8 p-4 border text-sm font-light ${
+                darkMode 
+                  ? 'bg-blue-900/20 text-blue-400 border-blue-900/30' 
+                  : 'bg-blue-50 text-blue-700 border-blue-100'
               }`}>
                 <p>
                   <strong>Note:</strong> You can upgrade or downgrade your plan at any time. 
@@ -382,7 +399,18 @@ export default function SubscriptionPage() {
             </>
           )}
         </div>
-      </div>
+
+        {/* Footer */}
+        <div className={`mt-12 sm:mt-16 pt-6 sm:pt-8 border-t ${
+          darkMode ? "border-[#1a1a1a]" : "border-gray-100"
+        }`}>
+          <p className={`text-center text-xs sm:text-sm font-light ${
+            darkMode ? "text-gray-600" : "text-gray-400"
+          }`}>
+            © 2025 Courtly by JiaYou Tennis
+          </p>
+        </div>
+      </main>
     </div>
   );
 }
