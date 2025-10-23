@@ -162,6 +162,27 @@ export interface Org {
   stripeCustomerId?: string;
   subscription?: SubscriptionInfo;
   
+  // Stripe Connect fields
+  stripeStatus?: 'unlinked' | 'onboarding' | 'active' | 'restricted' | 'pending_verification';
+  stripeOnboardingComplete?: boolean;
+  payoutsEnabled?: boolean;
+  chargesEnabled?: boolean;
+  supportEmail?: string;
+  supportPhone?: string;
+  statementDescriptor?: string;
+  reservationSettings?: {
+    requirePaymentAtBooking: boolean;
+    hourlyRateCents: number;
+  };
+  membershipPlans?: Array<{
+    id: string;
+    name: string;
+    priceCents: number;
+    interval: 'month' | 'year' | 'one_time';
+    active: boolean;
+    stripePriceId?: string;
+  }>;
+  
   // Membership settings
   membershipEnabled?: boolean; // Whether club offers memberships
   membershipTiers?: MembershipTiersMap; // Map of membership tiers by tier name (monthly, annual, day_pass)

@@ -164,12 +164,24 @@ async function createOrgDocument(clubId: string, clubData: ClubData): Promise<vo
     guestPricePerHour: 0,
     currencySymbol: '$',
     
-    // Payment
+    // Payment - Updated with Stripe Connect fields per spec
     paymentSettings: {
       stripeAccountId: '',
       payoutEnabled: false
     },
     stripeAccountId: '',
+    stripeStatus: 'unlinked',
+    stripeOnboardingComplete: false,
+    payoutsEnabled: false,
+    chargesEnabled: false,
+    supportEmail: clubData.email,
+    supportPhone: clubData.phone || '',
+    statementDescriptor: clubData.name.substring(0, 22), // Stripe limit
+    reservationSettings: {
+      requirePaymentAtBooking: true,
+      hourlyRateCents: 1500, // $15.00 default
+    },
+    membershipPlans: [],
     
     // Subscription - Default to free plan
     subscription: {

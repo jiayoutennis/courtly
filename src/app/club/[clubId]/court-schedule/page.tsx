@@ -7,7 +7,7 @@ import { auth, db } from "../../../../../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { 
   doc, getDoc, collection, query, 
-  getDocs, where, addDoc, serverTimestamp, deleteDoc, updateDoc
+  getDocs, where, deleteDoc, updateDoc
 } from "firebase/firestore";
 import DarkModeToggle from "@/app/components/DarkModeToggle";
 import PageTitle from "@/app/components/PageTitle";
@@ -57,6 +57,7 @@ export default function CourtSchedulePage() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  const [isBookingInProgress, setIsBookingInProgress] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [bookingData, setBookingData] = useState({
     courtId: "",
@@ -465,7 +466,14 @@ export default function CourtSchedulePage() {
   };
 
   const handleConfirmBooking = async () => {
+    // Prevent multiple simultaneous bookings
+    if (isBookingInProgress) {
+      console.log('Booking already in progress, ignoring duplicate request');
+      return;
+    }
+
     try {
+      setIsBookingInProgress(true);
       setError("");
       setSuccess("");
 
@@ -587,35 +595,85 @@ export default function CourtSchedulePage() {
         console.error('❌ User document not found for userId:', currentUserId);
       }
       
-      // Create booking with adjusted end time
-      const bookingData_toSave = {
+      // Create booking using server-side API with transaction protection
+      const bookingRequest = {
+        clubId,
         courtId: bookingData.courtId,
         courtName: bookingData.courtName,
         date: bookingData.date,
         startTime: bookingData.startTime,
         endTime: adjustedEndTime,
         userId: currentUserId,
-        memberId: currentUserId, // Required by Firestore security rules
         userName: currentUserName,
         notes: bookingData.notes || "",
-        createdAt: serverTimestamp(),
-        status: "confirmed",
-        cost: bookingCost, // Store the cost
-        paid: false // Will be paid later via account balance
+        cost: bookingCost,
+        userType: isCoach ? 'coach' : isAdmin ? 'admin' : 'member'
       };
       
-      console.log('Creating booking in orgs/' + clubId + '/bookings with data:', bookingData_toSave);
-      const bookingRef = await addDoc(collection(db, `orgs/${clubId}/bookings`), bookingData_toSave);
-      console.log('✅ Booking created successfully with ID:', bookingRef.id);
+      console.log('Creating booking via API with data:', bookingRequest);
+      
+      const response = await fetch('/api/bookings/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(bookingRequest),
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create booking');
+      }
+      
+      console.log('✅ Booking created successfully with ID:', result.bookingId);
 
       // Charge booking using automatic payment or add to balance
       if (bookingCost > 0 && !isCoach && !isAdmin) {
+        // First, mark payment as in progress to prevent double charging
+        const chargeResponse = await fetch('/api/bookings/charge', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            bookingId: result.bookingId,
+            userId: currentUserId,
+            clubId,
+            amount: bookingCost,
+            description: `${bookingData.courtName} - ${bookingData.date} ${bookingData.startTime}`
+          }),
+        });
+        
+        if (!chargeResponse.ok) {
+          const chargeError = await chargeResponse.json();
+          throw new Error(chargeError.error || 'Failed to process payment');
+        }
+        
+        // Now process the actual payment
         const chargeResult = await chargeOrDebitBalance(
           currentUserId,
           clubId,
           bookingCost,
           `${bookingData.courtName} - ${bookingData.date} ${bookingData.startTime}`
         );
+        
+        // Complete the payment in the booking record
+        const completePaymentResponse = await fetch('/api/bookings/complete-payment', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            bookingId: result.bookingId,
+            clubId,
+            paymentMethod: chargeResult.charged ? 'charged' : 'balance'
+          }),
+        });
+        
+        if (!completePaymentResponse.ok) {
+          console.error('Failed to complete payment record');
+        }
         
         if (chargeResult.success) {
           if (chargeResult.charged) {
@@ -666,6 +724,8 @@ export default function CourtSchedulePage() {
     } catch (error) {
       console.error("Error booking court:", error);
       setError("Failed to book court. Please try again.");
+    } finally {
+      setIsBookingInProgress(false);
     }
   };
 
@@ -1309,13 +1369,16 @@ export default function CourtSchedulePage() {
               </button>
               <button
                 onClick={handleConfirmBooking}
+                disabled={isBookingInProgress}
                 className={`flex-1 px-3 sm:px-4 py-2 text-xs sm:text-sm font-light rounded transition-colors ${
-                  darkMode
+                  isBookingInProgress
+                    ? (darkMode ? "bg-gray-600 text-gray-400 cursor-not-allowed" : "bg-gray-300 text-gray-500 cursor-not-allowed")
+                    : darkMode
                     ? "bg-white text-black hover:bg-gray-100"
                     : "bg-black text-white hover:bg-gray-800"
                 }`}
               >
-                Confirm Booking
+                {isBookingInProgress ? "Booking..." : "Confirm Booking"}
               </button>
             </div>
           </div>

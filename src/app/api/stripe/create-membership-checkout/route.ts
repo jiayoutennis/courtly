@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe/server';
-import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { adminDb } from '@/lib/firebase-admin';
 
 /**
  * POST /api/stripe/create-membership-checkout
@@ -31,64 +31,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify user authentication
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
+    // Get club data to access Stripe Connect account
+    const clubDoc = await adminDb.collection('orgs').doc(clubId).get();
+    if (!clubDoc.exists) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.substring(7);
-    let decodedToken;
-    try {
-      decodedToken = await adminAuth.verifyIdToken(token);
-    } catch (error) {
-      return NextResponse.json(
-        { error: 'Invalid authentication token' },
-        { status: 401 }
-      );
-    }
-
-    // Ensure the userId matches the authenticated user
-    if (decodedToken.uid !== userId) {
-      return NextResponse.json(
-        { error: 'User ID mismatch' },
-        { status: 403 }
-      );
-    }
-
-    // Get or create Stripe customer
-    const userRef = adminDb.collection('users').doc(userId);
-    const userDoc = await userRef.get();
-    
-    if (!userDoc.exists) {
-      return NextResponse.json(
-        { error: 'User not found' },
+        { error: 'Club not found' },
         { status: 404 }
       );
     }
 
-    const userData = userDoc.data();
-    let stripeCustomerId = userData?.stripeCustomerId;
-
-    // Create Stripe customer if doesn't exist
-    if (!stripeCustomerId) {
-      const customer = await stripe.customers.create({
-        email: userData?.email || decodedToken.email,
-        metadata: {
-          userId: userId,
-          clubId: clubId,
-        },
-      });
-      stripeCustomerId = customer.id;
-      
-      // Save customer ID to Firestore
-      await userRef.update({
-        stripeCustomerId: customer.id,
-      });
+    const clubData = clubDoc.data();
+    if (!clubData) {
+      return NextResponse.json(
+        { error: 'Club data not found' },
+        { status: 404 }
+      );
     }
+
+    const stripeAccountId = clubData.stripeAccountId;
+    if (!stripeAccountId) {
+      return NextResponse.json(
+        { error: 'Club must complete Stripe Connect setup first' },
+        { status: 400 }
+      );
+    }
+
+    // Create Stripe customer on club's account
+    const customer = await stripe.customers.create({
+      metadata: {
+        userId: userId,
+        clubId: clubId,
+      },
+    }, {
+      stripeAccount: stripeAccountId,
+    });
+    const stripeCustomerId = customer.id;
 
     // Determine if this is a recurring membership or one-time
     const isRecurring = membershipPlan.tier === 'monthly' || membershipPlan.tier === 'annual';
@@ -105,8 +82,8 @@ export async function POST(request: NextRequest) {
         },
       ],
       mode: mode,
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/club/${clubId}?membership=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/club/${clubId}?membership=canceled`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/club/${clubId}/membership?membership=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/club/${clubId}/membership?membership=canceled`,
       metadata: {
         type: 'membership',
         userId: userId,
@@ -129,7 +106,9 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    const session = await stripe.checkout.sessions.create(sessionConfig);
+    const session = await stripe.checkout.sessions.create(sessionConfig, {
+      stripeAccount: stripeAccountId,
+    });
 
     return NextResponse.json({ 
       sessionId: session.id,

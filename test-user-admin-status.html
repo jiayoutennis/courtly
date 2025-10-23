@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test User Admin Status</title>
+    <script type="module">
+        // Import Firebase
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        // Your Firebase config (replace with your actual config)
+        const firebaseConfig = {
+            // Add your Firebase config here
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Get club ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const clubId = urlParams.get('clubId') || prompt('Enter club ID:');
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                console.log('=== USER ADMIN STATUS TEST ===');
+                console.log('User ID:', user.uid);
+                console.log('Club ID:', clubId);
+                
+                try {
+                    const userDoc = await getDoc(doc(db, 'users', user.uid));
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        console.log('User Data:', userData);
+                        console.log('User Type:', userData.userType);
+                        console.log('Organization:', userData.organization);
+                        console.log('Is Array:', Array.isArray(userData.organization));
+                        console.log('Includes Club ID:', userData.organization?.includes(clubId));
+                        
+                        const isCourtlyAdmin = userData.userType === 'courtly';
+                        const isClubAdmin = userData.userType === 'admin' && 
+                            userData.organization && 
+                            Array.isArray(userData.organization) && 
+                            userData.organization.includes(clubId);
+                        
+                        console.log('Is Courtly Admin:', isCourtlyAdmin);
+                        console.log('Is Club Admin:', isClubAdmin);
+                        console.log('Final Admin Status:', isCourtlyAdmin || isClubAdmin);
+                        
+                        // Display results on page
+                        document.getElementById('results').innerHTML = `
+                            <h2>Admin Status Test Results</h2>
+                            <p><strong>User ID:</strong> ${user.uid}</p>
+                            <p><strong>Club ID:</strong> ${clubId}</p>
+                            <p><strong>User Type:</strong> ${userData.userType}</p>
+                            <p><strong>Organization:</strong> ${JSON.stringify(userData.organization)}</p>
+                            <p><strong>Is Array:</strong> ${Array.isArray(userData.organization)}</p>
+                            <p><strong>Includes Club ID:</strong> ${userData.organization?.includes(clubId)}</p>
+                            <p><strong>Is Courtly Admin:</strong> ${isCourtlyAdmin}</p>
+                            <p><strong>Is Club Admin:</strong> ${isClubAdmin}</p>
+                            <p><strong>Final Admin Status:</strong> ${isCourtlyAdmin || isClubAdmin}</p>
+                        `;
+                    } else {
+                        console.log('User document not found');
+                        document.getElementById('results').innerHTML = '<p>User document not found in Firestore</p>';
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    document.getElementById('results').innerHTML = `<p>Error: ${error.message}</p>`;
+                }
+            } else {
+                console.log('No user logged in');
+                document.getElementById('results').innerHTML = '<p>Please log in first</p>';
+            }
+        });
+    </script>
+</head>
+<body>
+    <h1>Test User Admin Status</h1>
+    <div id="results">Loading...</div>
+    
+    <h3>Instructions:</h3>
+    <ol>
+        <li>Make sure you're logged in to Courtly</li>
+        <li>Add ?clubId=your-club-id to the URL (e.g., ?clubId=abc123)</li>
+        <li>Check the results above and browser console</li>
+    </ol>
+</body>
+</html>
